@@ -234,7 +234,12 @@ def main():
     if not distributed:
         # assert False
         model = MMDataParallel(model, device_ids=[0])
-        outputs = single_gpu_test(model, data_loader, args.show, args.show_dir)
+        # outputs = single_gpu_test(model, data_loader, args.show, args.show_dir)
+        for i, data in enumerate(data_loader):
+            if i > 1:
+                break
+            with torch.no_grad():
+                output = model(return_loss=False, rescale=True, **data)
     else:
         model = MMDistributedDataParallel(
             model.cuda(),
