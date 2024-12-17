@@ -71,38 +71,6 @@ class VADDummy:
             }
         }]
 
-    def predict(self, image, ego_history, map_data, driving_command):
-        # Create dummy prediction
-        obj = vad_service_pb2.PredictedObject(
-            uuid=str(uuid.uuid4()),
-            existence_probability=0.9
-        )
-        
-        # Set kinematics
-        kinematics = obj.kinematics
-        
-        # Initial pose
-        kinematics.initial_pose_with_covariance.pose.position.x = 0.0
-        kinematics.initial_pose_with_covariance.pose.position.y = 0.0
-        kinematics.initial_pose_with_covariance.pose.position.z = 0.0
-        kinematics.initial_pose_with_covariance.pose.orientation.w = 1.0
-        kinematics.initial_pose_with_covariance.covariance.extend([0.0] * 36)
-        
-        # Predicted path
-        path = kinematics.predicted_paths.add()
-        for i in range(10):
-            pose = path.path.add()
-            pose.position.x = float(i)
-            pose.position.y = float(i)
-            pose.position.z = 0.0
-            pose.orientation.w = 1.0
-        
-        path.time_step.sec = 0
-        path.time_step.nanosec = 100000000  # 0.1 second
-        path.confidence = 0.8
-        
-        return obj
-
 class VADServicer(vad_service_pb2_grpc.VADServiceServicer):
     def __init__(self, vehicle_info_path: Path, device: str = "cuda:0"):
         self.vad_model = VADDummy()
@@ -207,18 +175,12 @@ class VADServicer(vad_service_pb2_grpc.VADServiceServicer):
                     )
                 predcicted_objects.append(predicted_object)
             
-            _predicted_object = self.vad_model.predict(
-                image,
-                request.ego_history,
-                request.map_data,
-                request.driving_command
-            )
-            
             # Create response
             response = vad_service_pb2.VADResponse()
             if len(request.ego_history) > 0:
                 response.header.CopyFrom(request.ego_history[-1].header)
-            response.objects.append(_predicted_object)
+            for predicted_object in predcicted_objects:
+                response.objects.append(predicted_object)
             print("send response")
             return response
             
