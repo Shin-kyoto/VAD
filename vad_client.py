@@ -9,6 +9,8 @@ from typing import List
 
 import rclpy
 from rclpy.node import Node
+# import tf2_ros
+# import tf2_geometry_msgs
 from sensor_msgs.msg import CompressedImage, Imu
 from nav_msgs.msg import Odometry 
 from autoware_perception_msgs.msg import (
@@ -149,6 +151,10 @@ class VADClient(Node):
         self.latest_image = None
         self.ego_history = []
         self.driving_command = [0, 0, 1]  # Go straight by default
+
+        # tf2バッファとリスナーの初期化
+        # self.tf_buffer = tf2_ros.Buffer()
+        # self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
         
         self.get_logger().info('Initialized VADClient')
         if self.dummy_mode:
@@ -399,10 +405,52 @@ class VADClient(Node):
             self.get_logger().error(f'Unexpected error: {str(e)}')
             import traceback
             self.get_logger().error(traceback.format_exc())
-                
+
+    def do_transform_pose(self, pose_base_link, transform):
+        """
+        tf2の変換を使用してPoseを変換
+        """
+        # transformed_pose = tf2_geometry_msgs.do_transform_pose(pose_base_link, transform)
+        transformed_pose = pose_base_link
+        return transformed_pose
+        
     def publish_trajectory(self, response: vad_service_pb2.VADResponse):
         msg = PredictedObjects()
-        msg.header.frame_id = response.header.frame_id
+        msg.header.frame_id = "map"  # フレームIDをmapに変更
+
+        # TODO(Shin-kyoto): tf2による座標変換を実装
+        # デフォルトのタイムスタンプ
+        # default_time_step_sec = 0
+        # default_time_step_nanosec = 0
+
+        # try:
+        #     # オブジェクトがない場合は早期リターン
+        #     if not response.objects:
+        #         self.get_logger().warn('No objects in VAD response')
+        #         return
+
+        #     # 最初に見つかったパスのタイムスタンプを使用
+        #     for proto_obj in response.objects:
+        #         if proto_obj.kinematics.predicted_paths:
+        #             default_time_step_sec = proto_obj.kinematics.predicted_paths[0].time_step.sec
+        #             default_time_step_nanosec = proto_obj.kinematics.predicted_paths[0].time_step.nanosec
+        #             break
+
+        #     # 変換時間は最初に見つかったパスの時間を使用
+        #     transform_time = rclpy.time.Time(
+        #         seconds=default_time_step_sec, 
+        #         nanoseconds=default_time_step_nanosec
+        #     )
+            
+        #     # base_linkからmap座標系への座標変換を取得
+        #     transform = self.tf_buffer.lookup_transform(
+        #         'map', 
+        #         'base_link', 
+        #         transform_time,
+        #         timeout=rclpy.duration.Duration(seconds=0.1)
+        #     )
+        # except Exception as e:
+        #     self.get_logger().error(f'座標変換エラー: {e}')
         
         for proto_obj in response.objects:
             obj = PredictedObject()
@@ -413,10 +461,13 @@ class VADClient(Node):
             
             # Convert kinematics
             kinematics = proto_obj.kinematics
-            # Initial pose
-            obj.kinematics.initial_pose_with_covariance = self._convert_proto_to_pose_with_covariance(
+            # 初期位置の座標変換
+            initial_pose = self._convert_proto_to_pose_with_covariance(
                 kinematics.initial_pose_with_covariance
             )
+            # 初期位置を座標変換
+            initial_pose_map = self.do_transform_pose(initial_pose, transform=None)
+            obj.kinematics.initial_pose_with_covariance = initial_pose_map
             
             # Predicted paths
             for proto_path in kinematics.predicted_paths:
@@ -431,7 +482,9 @@ class VADClient(Node):
                     pose.orientation.y = proto_pose.orientation.y
                     pose.orientation.z = proto_pose.orientation.z
                     pose.orientation.w = proto_pose.orientation.w
-                    predicted_path.path.append(pose)
+                    # 座標変換
+                    pose_map = self.do_transform_pose(pose, transform=None)
+                    predicted_path.path.append(pose_map)
                 
                 # Time step
                 predicted_path.time_step.sec = proto_path.time_step.sec
