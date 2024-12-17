@@ -229,13 +229,52 @@ class VADClient(Node):
         self.driving_command = self._compute_driving_command(msg)
         
     def steering_callback(self, msg: SteeringReport):
+        """ステアリング情報のコールバック"""
         self.get_logger().debug('Received steering data')
-        self.latest_steering = msg
+        self.latest_steering = msg.steering_tire_angle  # 直接角度を保存
+    
+    def _compute_driving_command(self, path_msg: PathWithLaneId, num_points: int = 20) -> List[float]:
+        # TODO(Shin-kyoto): 進行方向がyとみなして良いのかを確認すべし
+        # TODO(Shin-kyoto): 最初のN点をとって判定してよいのかを確認すべし
+        """パスの形状から運転コマンド（右折/左折/直進）を計算
         
-    def _compute_driving_command(self, path_msg: PathWithLaneId) -> List[float]:
-        """パスから運転コマンド（右折/左折/直進）を計算"""
-        # TODO: パスの形状から進行方向を判断する処理を実装
-        return [0, 0, 1]  # デフォルトは直進
+        Args:
+            path_msg: PathWithLaneIdメッセージ
+            num_points: 確認する先読み点数（デフォルト20点）
+        
+        Returns:
+            List[float]: [右折, 左折, 直進]のone-hotベクトル
+        """
+        if len(path_msg.points) < num_points:
+            num_points = len(path_msg.points)
+            
+        if num_points < 2:
+            return [0, 0, 1]  # 点が少なすぎる場合は直進とみなす
+            
+        # 最初の点の位置と向きを基準にする
+        start_x = path_msg.points[0].point.pose.position.x
+        start_y = path_msg.points[0].point.pose.position.y
+        
+        # 最後の点（num_points番目）との相対位置を計算
+        end_x = path_msg.points[num_points-1].point.pose.position.x
+        end_y = path_msg.points[num_points-1].point.pose.position.y
+        
+        # 相対位置を計算
+        delta_x = end_x - start_x
+        delta_y = end_y - start_y
+        
+        # 進行方向の判定
+        # x, yの変化量から大まかな進行方向を推定
+        # 閾値は調整が必要
+        TURN_THRESHOLD = 2.0  # メートル
+        
+        if abs(delta_x) > TURN_THRESHOLD:
+            if delta_x > 0:
+                return [1, 0, 0]  # 右折
+            else:
+                return [0, 1, 0]  # 左折
+        else:
+            return [0, 0, 1]  # 直進
 
     def _convert_odom_to_proto(self, msg: Odometry) -> vad_service_pb2.Odometry:
         proto_odom = vad_service_pb2.Odometry()
