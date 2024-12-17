@@ -483,10 +483,8 @@ class VADServicer(vad_service_pb2_grpc.VADServiceServicer):
                     break
                 with torch.no_grad():
                     output = self.vad_wrapper.model(return_loss=False, rescale=True, **data)
-            # Process with VAD model
-            output = self.vad_model(return_loss=False, rescale=True, **input_data)
+
             with torch.no_grad():
-                # import pdb;pdb.set_trace()
                 output = self.vad_wrapper.model(return_loss=False, rescale=True, **input_data)
             # ego_fut_predsを取得 (shape: [3, 6, 2])
             ego_fut_preds = output[0]['pts_bbox']['ego_fut_preds']
