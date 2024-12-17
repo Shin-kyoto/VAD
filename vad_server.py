@@ -108,9 +108,42 @@ class VADServicer(vad_service_pb2_grpc.VADServiceServicer):
         self.vad_model = VADDummy()
         self.vehicle_params = VehicleParams(vehicle_info_path)
         self.device = device
-    
+
+    def create_predicted_object_from_trajectory(self, trajectory: torch.Tensor, confidence: float, timestamp):
+        """単一の軌道をPredictedObjectに変換"""
+        obj = vad_service_pb2.PredictedObject(
+            uuid=str(uuid.uuid4()),
+            existence_probability=0.9
+        )
+        
+        # 初期位置を設定
+        kinematics = obj.kinematics
+        kinematics.initial_pose_with_covariance.pose.position.x = 0.0
+        kinematics.initial_pose_with_covariance.pose.position.y = 0.0
+        kinematics.initial_pose_with_covariance.pose.position.z = 0.0
+        kinematics.initial_pose_with_covariance.pose.orientation.w = 1.0
+        kinematics.initial_pose_with_covariance.covariance.extend([0.0] * 36)
+        
+        # 予測軌道を設定
+        path = kinematics.predicted_paths.add()
+        for waypoint in trajectory:
+            pose = path.path.add()
+            pose.position.x = float(waypoint[0])
+            pose.position.y = float(waypoint[1])
+            pose.position.z = 0.0
+            pose.orientation.w = 1.0
+            
+        # 画像のタイムスタンプを使用
+        path.time_step.sec = 0
+        path.time_step.nanosec = 100000000  # 0.1 second
+        path.confidence = float(confidence)
+        
+        return obj
+
     def ProcessData(self, request, context):
         try:
+            timestamp = 0.0
+            # timestamp = request.image_timestamp
             # Convert image data
             nparr = np.frombuffer(request.image_data, np.uint8)
             image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
@@ -162,7 +195,19 @@ class VADServicer(vad_service_pb2_grpc.VADServiceServicer):
             output = self.vad_model(return_loss=False, rescale=True, **input_data)
             # ego_fut_predsを取得 (shape: [3, 6, 2])
             ego_fut_preds = output[0]['pts_bbox']['ego_fut_preds']
-            predicted_object = self.vad_model.predict(
+
+            predcicted_objects = []
+            confidences = np.linspace(1.0, 0.5, ego_fut_preds.shape[1])  # 6つの予測に対する信頼度を設定
+            for traj_idx in range(ego_fut_preds.shape[1]):
+                trajectory = ego_fut_preds[:, traj_idx, :]  # (3, 2)の軌道データ
+                predicted_object = self.create_predicted_object_from_trajectory(
+                        trajectory=trajectory,
+                        confidence=confidences[traj_idx],
+                        timestamp=timestamp,
+                    )
+                predcicted_objects.append(predicted_object)
+            
+            _predicted_object = self.vad_model.predict(
                 image,
                 request.ego_history,
                 request.map_data,
@@ -173,7 +218,7 @@ class VADServicer(vad_service_pb2_grpc.VADServiceServicer):
             response = vad_service_pb2.VADResponse()
             if len(request.ego_history) > 0:
                 response.header.CopyFrom(request.ego_history[-1].header)
-            response.objects.append(predicted_object)
+            response.objects.append(_predicted_object)
             print("send response")
             return response
             
