@@ -4,8 +4,9 @@ import vad_service_pb2
 import vad_service_pb2_grpc
 import cv2
 import numpy as np
+from scipy.spatial.transform import Rotation
 import array
-from typing import List
+from typing import List        
 
 import rclpy
 from rclpy.node import Node
@@ -22,8 +23,10 @@ from autoware_perception_msgs.msg import (
 )
 from tier4_planning_msgs.msg import PathWithLaneId, PathPointWithLaneId
 from autoware_vehicle_msgs.msg import SteeringReport
+from tf2_msgs.msg import TFMessage
 from geometry_msgs.msg import (
     PoseWithCovariance,
+    TransformStamped,
     TwistWithCovariance,
     Point,
     Quaternion,
@@ -59,6 +62,16 @@ class VADClient(Node):
             f'/sensing/camera/camera{i}/image_rect_color/compressed' 
             for i in range(6)
         ]
+
+        self.tf_subscription = self.create_subscription(
+            TFMessage, 
+            '/tf', 
+            self.tf_callback, 
+            10  # QoSプロファイル
+        )
+
+        # 最新の座標変換を保存するディクショナリ
+        self.latest_transforms = {}
 
         # 各カメラ画像のSubscriberを作成
         self.latest_images = {topic: None for topic in self.camera_topics}
@@ -253,6 +266,66 @@ class VADClient(Node):
         self.past_poses.append(current_point)
         self.try_process()
 
+    def tf_callback(self, msg):
+        """
+        /tfメッセージを処理するコールバック関数
+        """
+        for transform in msg.transforms:
+            # 座標変換を最新の情報で更新
+            key = (transform.header.frame_id, transform.child_frame_id)
+            self.latest_transforms[key] = transform
+
+            self.can_bus = self.transform_to_ego2global(transform)
+
+    def transform_to_ego2global(self, transform):
+        """
+        global2egoの変換からego2globalの変換を計算
+        """
+
+        # 元の回転と並進
+        global_rot = Rotation.from_quat([
+            transform.transform.rotation.x,
+            transform.transform.rotation.y,
+            transform.transform.rotation.z,
+            transform.transform.rotation.w
+        ])
+
+        global_trans = np.array([
+            transform.transform.translation.x,
+            transform.transform.translation.y,
+            transform.transform.translation.z
+        ])
+
+        # 逆変換の計算
+        ego_rot = global_rot.inv()
+        ego_trans = -global_rot.inv().apply(global_trans)
+
+        # クォータニオンの取得
+        ego_rotation = ego_rot.as_quat()
+
+        def quaternion_yaw(quat):
+            """
+            四元数からyaw角を取得
+            quat: [x, y, z, w]の形式の四元数
+            """
+            return np.arctan2(
+                2 * (quat[3] * quat[2] + quat[0] * quat[1]),
+                1 - 2 * (quat[1]**2 + quat[2]**2)
+            )
+
+        # パッチ角の計算
+        patch_angle = quaternion_yaw(ego_rotation) / np.pi * 180
+
+        # 負の角度を360度に変換
+        if patch_angle < 0:
+            patch_angle += 360
+
+        return {
+            'ego2global_translation': ego_trans,
+            'ego2global_rotation': ego_rotation,
+            'patch_angle': patch_angle
+        }
+
     def imu_callback(self, msg: Imu):
         self.get_logger().debug('Received IMU data')
         self.latest_imu = msg
@@ -385,13 +458,26 @@ class VADClient(Node):
         steering_report = vad_service_pb2.SteeringReport(
             steering_tire_angle=self.latest_steering if self.latest_steering is not None else 0.0
         )
-
+        can_bus_msg = vad_service_pb2.CanBus(
+            ego2global_translation=vad_service_pb2.Vector3(
+                x=self.can_bus['ego2global_translation'][0],
+                y=self.can_bus['ego2global_translation'][1],
+                z=self.can_bus['ego2global_translation'][2]
+            ),
+            ego2global_rotation=vad_service_pb2.Vector3(
+                x=self.can_bus['ego2global_rotation'][0],
+                y=self.can_bus['ego2global_rotation'][1],
+                z=self.can_bus['ego2global_rotation'][2]
+            ),
+            patch_angle=self.can_bus['patch_angle']
+        )
         request = vad_service_pb2.VADRequest(
             images=camera_images,
             ego_history=self.ego_history,
             map_data=b'dummy_map',  # Replace with actual map data
             driving_command=self.driving_command,
             steering=steering_report,
+            can_bus=can_bus_msg,
         )
         try:
             self.get_logger().info('Sending request to VAD server')

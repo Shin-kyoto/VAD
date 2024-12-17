@@ -178,12 +178,6 @@ class VADServicer(vad_service_pb2_grpc.VADServiceServicer):
             ]).to(self.device)
             img_container = DataContainer(img_tensor, stack=True, padding_value=0)
 
-            # img_metasの作成
-            img_metas = [[{
-                'scene_token': '0',  # ダミーのscene_token
-                'can_bus': np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], dtype=np.float32),
-            }]]
-
             # Odometryから速度と角速度を取得
             latest_odom = request.ego_history[-1]
             ego_vx = latest_odom.twist.twist.linear.x
@@ -226,6 +220,44 @@ class VADServicer(vad_service_pb2_grpc.VADServiceServicer):
             # [1, 1, 1, 9]の形状に変形
             ego_lcf_feat_tensor = ego_lcf_feat_raw.view(1, 1, 1, -1)
             ego_lcf_feat_container = DataContainer(ego_lcf_feat_tensor, stack=True, padding_value=0)
+
+            # can_busの配列を作成（18要素）
+            can_bus = np.zeros(18, dtype=np.float32)
+
+            # ego2global_translation
+            can_bus[0] = request.can_bus.ego2global_translation.x
+            can_bus[1] = request.can_bus.ego2global_translation.y
+            can_bus[2] = request.can_bus.ego2global_translation.z
+
+            # ego2global_rotation
+            can_bus[3:7] = [
+                request.can_bus.ego2global_rotation.x,
+                request.can_bus.ego2global_rotation.y,
+                request.can_bus.ego2global_rotation.z,
+                0.0
+            ]
+
+            # 加速度
+            can_bus[7] = ax
+            can_bus[8] = ay
+
+            # yaw角速度
+            can_bus[12] = ego_w
+
+            # 速度
+            can_bus[13] = ego_vx
+            can_bus[14] = ego_vy
+
+            # patch_angle
+            patch_angle = request.can_bus.patch_angle
+            can_bus[-2] = patch_angle / 180 * np.pi
+            can_bus[-1] = patch_angle
+
+            # img_metasの作成
+            img_metas = [DataContainer([[{
+                'scene_token': '0',  # ダミーのscene_token
+                'can_bus': can_bus,
+            }]])]
 
             # driving_commandを[1, 1, 1, 3]の形状に変形
             ego_fut_cmd_tensor = torch.tensor(

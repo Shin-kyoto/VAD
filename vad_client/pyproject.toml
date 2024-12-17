@@ -9,4 +9,5 @@ dependencies = [
     "grpcio-tools>=1.68.1",
     "numpy>=2.2.0",
     "opencv-python",
+    "scipy>=1.14.1",
 ]

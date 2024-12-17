@@ -15,6 +15,7 @@ message VADRequest {
   repeated float driving_command = 5;  // one-hot vector [right, left, straight]
   ImuData imu_data = 6;
   SteeringReport steering = 7;
+  CanBus can_bus = 8;
 }
 
 message CameraImage {
@@ -40,6 +41,12 @@ message Odometry {
   PoseWithCovariance pose = 3;
   TwistWithCovariance twist = 4;
   repeated Point past_poses = 5;  // 過去の位置履歴を追加
+}
+
+message CanBus {
+ Vector3 ego2global_translation = 1;  // グローバル座標系での自車の位置
+ Vector3 ego2global_rotation = 2;    // グローバル座標系での自車の回転
+ float patch_angle = 3;
 }
 
 message SteeringReport {

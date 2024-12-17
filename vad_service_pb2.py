@@ -14,7 +14,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x11vad_service.proto\x12\x03vad\"\xdc\x01\n\nVADRequest\x12 \n\x06images\x18\x01 \x03(\x0b\x32\x10.vad.CameraImage\x12\x16\n\x0eimage_encoding\x18\x02 \x01(\t\x12\"\n\x0b\x65go_history\x18\x03 \x03(\x0b\x32\r.vad.Odometry\x12\x10\n\x08map_data\x18\x04 \x01(\x0c\x12\x17\n\x0f\x64riving_command\x18\x05 \x03(\x02\x12\x1e\n\x08imu_data\x18\x06 \x01(\x0b\x32\x0c.vad.ImuData\x12%\n\x08steering\x18\x07 \x01(\x0b\x32\x13.vad.SteeringReport\"x\n\x0b\x43\x61meraImage\x12\x12\n\nimage_data\x18\x01 \x01(\x0c\x12\x10\n\x08\x65ncoding\x18\x02 \x01(\t\x12\x11\n\tcamera_id\x18\x03 \x01(\x05\x12\x15\n\rtime_step_sec\x18\x04 \x01(\x03\x12\x19\n\x11time_step_nanosec\x18\x05 \x01(\r\"\xef\x01\n\x07ImuData\x12$\n\x0borientation\x18\x01 \x01(\x0b\x32\x0f.vad.Quaternion\x12\x1e\n\x16orientation_covariance\x18\x02 \x03(\x01\x12&\n\x10\x61ngular_velocity\x18\x03 \x01(\x0b\x32\x0c.vad.Vector3\x12#\n\x1b\x61ngular_velocity_covariance\x18\x04 \x03(\x01\x12)\n\x13linear_acceleration\x18\x05 \x01(\x0b\x32\x0c.vad.Vector3\x12&\n\x1elinear_acceleration_covariance\x18\x06 \x03(\x01\"\xaf\x01\n\x08Odometry\x12\x1b\n\x06header\x18\x01 \x01(\x0b\x32\x0b.vad.Header\x12\x16\n\x0e\x63hild_frame_id\x18\x02 \x01(\t\x12%\n\x04pose\x18\x03 \x01(\x0b\x32\x17.vad.PoseWithCovariance\x12\'\n\x05twist\x18\x04 \x01(\x0b\x32\x18.vad.TwistWithCovariance\x12\x1e\n\npast_poses\x18\x05 \x03(\x0b\x32\n.vad.Point\"-\n\x0eSteeringReport\x12\x1b\n\x13steering_tire_angle\x18\x01 \x01(\x02\"Q\n\x0bVADResponse\x12\x1b\n\x06header\x18\x01 \x01(\x0b\x32\x0b.vad.Header\x12%\n\x07objects\x18\x02 \x03(\x0b\x32\x14.vad.PredictedObject\"\xc0\x01\n\x0fPredictedObject\x12\x0c\n\x04uuid\x18\x01 \x01(\t\x12\x1d\n\x15\x65xistence_probability\x18\x02 \x01(\x02\x12\x31\n\x0e\x63lassification\x18\x03 \x03(\x0b\x32\x19.vad.ObjectClassification\x12\x32\n\nkinematics\x18\x04 \x01(\x0b\x32\x1e.vad.PredictedObjectKinematics\x12\x19\n\x05shape\x18\x05 \x01(\x0b\x32\n.vad.Shape\":\n\x14ObjectClassification\x12\r\n\x05label\x18\x01 \x01(\x05\x12\x13\n\x0bprobability\x18\x02 \x01(\x02\"\x90\x02\n\x19PredictedObjectKinematics\x12=\n\x1cinitial_pose_with_covariance\x18\x01 \x01(\x0b\x32\x17.vad.PoseWithCovariance\x12?\n\x1dinitial_twist_with_covariance\x18\x02 \x01(\x0b\x32\x18.vad.TwistWithCovariance\x12\x46\n$initial_acceleration_with_covariance\x18\x03 \x01(\x0b\x32\x18.vad.AccelWithCovariance\x12+\n\x0fpredicted_paths\x18\x04 \x03(\x0b\x32\x12.vad.PredictedPath\")\n\x06Header\x12\r\n\x05stamp\x18\x01 \x01(\x03\x12\x10\n\x08\x66rame_id\x18\x02 \x01(\t\"A\n\x12PoseWithCovariance\x12\x17\n\x04pose\x18\x01 \x01(\x0b\x32\t.vad.Pose\x12\x12\n\ncovariance\x18\x02 \x03(\x02\"D\n\x13TwistWithCovariance\x12\x19\n\x05twist\x18\x01 \x01(\x0b\x32\n.vad.Twist\x12\x12\n\ncovariance\x18\x02 \x03(\x02\"D\n\x13\x41\x63\x63\x65lWithCovariance\x12\x19\n\x05\x61\x63\x63\x65l\x18\x01 \x01(\x0b\x32\n.vad.Accel\x12\x12\n\ncovariance\x18\x02 \x03(\x02\"J\n\x04Pose\x12\x1c\n\x08position\x18\x01 \x01(\x0b\x32\n.vad.Point\x12$\n\x0borientation\x18\x02 \x01(\x0b\x32\x0f.vad.Quaternion\"(\n\x05Point\x12\t\n\x01x\x18\x01 \x01(\x02\x12\t\n\x01y\x18\x02 \x01(\x02\x12\t\n\x01z\x18\x03 \x01(\x02\"8\n\nQuaternion\x12\t\n\x01x\x18\x01 \x01(\x02\x12\t\n\x01y\x18\x02 \x01(\x02\x12\t\n\x01z\x18\x03 \x01(\x02\x12\t\n\x01w\x18\x04 \x01(\x02\"D\n\x05Twist\x12\x1c\n\x06linear\x18\x01 \x01(\x0b\x32\x0c.vad.Vector3\x12\x1d\n\x07\x61ngular\x18\x02 \x01(\x0b\x32\x0c.vad.Vector3\"D\n\x05\x41\x63\x63\x65l\x12\x1c\n\x06linear\x18\x01 \x01(\x0b\x32\x0c.vad.Vector3\x12\x1d\n\x07\x61ngular\x18\x02 \x01(\x0b\x32\x0c.vad.Vector3\"*\n\x07Vector3\x12\t\n\x01x\x18\x01 \x01(\x02\x12\t\n\x01y\x18\x02 \x01(\x02\x12\t\n\x01z\x18\x03 \x01(\x02\"^\n\rPredictedPath\x12\x17\n\x04path\x18\x01 \x03(\x0b\x32\t.vad.Pose\x12 \n\ttime_step\x18\x02 \x01(\x0b\x32\r.vad.Duration\x12\x12\n\nconfidence\x18\x03 \x01(\x02\"(\n\x08\x44uration\x12\x0b\n\x03sec\x18\x01 \x01(\x05\x12\x0f\n\x07nanosec\x18\x02 \x01(\r\"6\n\x05Shape\x12\r\n\x05width\x18\x01 \x01(\x02\x12\x0e\n\x06length\x18\x02 \x01(\x02\x12\x0e\n\x06height\x18\x03 \x01(\x02\x32@\n\nVADService\x12\x32\n\x0bProcessData\x12\x0f.vad.VADRequest\x1a\x10.vad.VADResponse\"\x00\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x11vad_service.proto\x12\x03vad\"\xfa\x01\n\nVADRequest\x12 \n\x06images\x18\x01 \x03(\x0b\x32\x10.vad.CameraImage\x12\x16\n\x0eimage_encoding\x18\x02 \x01(\t\x12\"\n\x0b\x65go_history\x18\x03 \x03(\x0b\x32\r.vad.Odometry\x12\x10\n\x08map_data\x18\x04 \x01(\x0c\x12\x17\n\x0f\x64riving_command\x18\x05 \x03(\x02\x12\x1e\n\x08imu_data\x18\x06 \x01(\x0b\x32\x0c.vad.ImuData\x12%\n\x08steering\x18\x07 \x01(\x0b\x32\x13.vad.SteeringReport\x12\x1c\n\x07\x63\x61n_bus\x18\x08 \x01(\x0b\x32\x0b.vad.CanBus\"x\n\x0b\x43\x61meraImage\x12\x12\n\nimage_data\x18\x01 \x01(\x0c\x12\x10\n\x08\x65ncoding\x18\x02 \x01(\t\x12\x11\n\tcamera_id\x18\x03 \x01(\x05\x12\x15\n\rtime_step_sec\x18\x04 \x01(\x03\x12\x19\n\x11time_step_nanosec\x18\x05 \x01(\r\"\xef\x01\n\x07ImuData\x12$\n\x0borientation\x18\x01 \x01(\x0b\x32\x0f.vad.Quaternion\x12\x1e\n\x16orientation_covariance\x18\x02 \x03(\x01\x12&\n\x10\x61ngular_velocity\x18\x03 \x01(\x0b\x32\x0c.vad.Vector3\x12#\n\x1b\x61ngular_velocity_covariance\x18\x04 \x03(\x01\x12)\n\x13linear_acceleration\x18\x05 \x01(\x0b\x32\x0c.vad.Vector3\x12&\n\x1elinear_acceleration_covariance\x18\x06 \x03(\x01\"\xaf\x01\n\x08Odometry\x12\x1b\n\x06header\x18\x01 \x01(\x0b\x32\x0b.vad.Header\x12\x16\n\x0e\x63hild_frame_id\x18\x02 \x01(\t\x12%\n\x04pose\x18\x03 \x01(\x0b\x32\x17.vad.PoseWithCovariance\x12\'\n\x05twist\x18\x04 \x01(\x0b\x32\x18.vad.TwistWithCovariance\x12\x1e\n\npast_poses\x18\x05 \x03(\x0b\x32\n.vad.Point\"v\n\x06\x43\x61nBus\x12,\n\x16\x65go2global_translation\x18\x01 \x01(\x0b\x32\x0c.vad.Vector3\x12)\n\x13\x65go2global_rotation\x18\x02 \x01(\x0b\x32\x0c.vad.Vector3\x12\x13\n\x0bpatch_angle\x18\x03 \x01(\x02\"-\n\x0eSteeringReport\x12\x1b\n\x13steering_tire_angle\x18\x01 \x01(\x02\"Q\n\x0bVADResponse\x12\x1b\n\x06header\x18\x01 \x01(\x0b\x32\x0b.vad.Header\x12%\n\x07objects\x18\x02 \x03(\x0b\x32\x14.vad.PredictedObject\"\xc0\x01\n\x0fPredictedObject\x12\x0c\n\x04uuid\x18\x01 \x01(\t\x12\x1d\n\x15\x65xistence_probability\x18\x02 \x01(\x02\x12\x31\n\x0e\x63lassification\x18\x03 \x03(\x0b\x32\x19.vad.ObjectClassification\x12\x32\n\nkinematics\x18\x04 \x01(\x0b\x32\x1e.vad.PredictedObjectKinematics\x12\x19\n\x05shape\x18\x05 \x01(\x0b\x32\n.vad.Shape\":\n\x14ObjectClassification\x12\r\n\x05label\x18\x01 \x01(\x05\x12\x13\n\x0bprobability\x18\x02 \x01(\x02\"\x90\x02\n\x19PredictedObjectKinematics\x12=\n\x1cinitial_pose_with_covariance\x18\x01 \x01(\x0b\x32\x17.vad.PoseWithCovariance\x12?\n\x1dinitial_twist_with_covariance\x18\x02 \x01(\x0b\x32\x18.vad.TwistWithCovariance\x12\x46\n$initial_acceleration_with_covariance\x18\x03 \x01(\x0b\x32\x18.vad.AccelWithCovariance\x12+\n\x0fpredicted_paths\x18\x04 \x03(\x0b\x32\x12.vad.PredictedPath\")\n\x06Header\x12\r\n\x05stamp\x18\x01 \x01(\x03\x12\x10\n\x08\x66rame_id\x18\x02 \x01(\t\"A\n\x12PoseWithCovariance\x12\x17\n\x04pose\x18\x01 \x01(\x0b\x32\t.vad.Pose\x12\x12\n\ncovariance\x18\x02 \x03(\x02\"D\n\x13TwistWithCovariance\x12\x19\n\x05twist\x18\x01 \x01(\x0b\x32\n.vad.Twist\x12\x12\n\ncovariance\x18\x02 \x03(\x02\"D\n\x13\x41\x63\x63\x65lWithCovariance\x12\x19\n\x05\x61\x63\x63\x65l\x18\x01 \x01(\x0b\x32\n.vad.Accel\x12\x12\n\ncovariance\x18\x02 \x03(\x02\"J\n\x04Pose\x12\x1c\n\x08position\x18\x01 \x01(\x0b\x32\n.vad.Point\x12$\n\x0borientation\x18\x02 \x01(\x0b\x32\x0f.vad.Quaternion\"(\n\x05Point\x12\t\n\x01x\x18\x01 \x01(\x02\x12\t\n\x01y\x18\x02 \x01(\x02\x12\t\n\x01z\x18\x03 \x01(\x02\"8\n\nQuaternion\x12\t\n\x01x\x18\x01 \x01(\x02\x12\t\n\x01y\x18\x02 \x01(\x02\x12\t\n\x01z\x18\x03 \x01(\x02\x12\t\n\x01w\x18\x04 \x01(\x02\"D\n\x05Twist\x12\x1c\n\x06linear\x18\x01 \x01(\x0b\x32\x0c.vad.Vector3\x12\x1d\n\x07\x61ngular\x18\x02 \x01(\x0b\x32\x0c.vad.Vector3\"D\n\x05\x41\x63\x63\x65l\x12\x1c\n\x06linear\x18\x01 \x01(\x0b\x32\x0c.vad.Vector3\x12\x1d\n\x07\x61ngular\x18\x02 \x01(\x0b\x32\x0c.vad.Vector3\"*\n\x07Vector3\x12\t\n\x01x\x18\x01 \x01(\x02\x12\t\n\x01y\x18\x02 \x01(\x02\x12\t\n\x01z\x18\x03 \x01(\x02\"^\n\rPredictedPath\x12\x17\n\x04path\x18\x01 \x03(\x0b\x32\t.vad.Pose\x12 \n\ttime_step\x18\x02 \x01(\x0b\x32\r.vad.Duration\x12\x12\n\nconfidence\x18\x03 \x01(\x02\"(\n\x08\x44uration\x12\x0b\n\x03sec\x18\x01 \x01(\x05\x12\x0f\n\x07nanosec\x18\x02 \x01(\r\"6\n\x05Shape\x12\r\n\x05width\x18\x01 \x01(\x02\x12\x0e\n\x06length\x18\x02 \x01(\x02\x12\x0e\n\x06height\x18\x03 \x01(\x02\x32@\n\nVADService\x12\x32\n\x0bProcessData\x12\x0f.vad.VADRequest\x1a\x10.vad.VADResponse\"\x00\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -22,49 +22,51 @@ _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'vad_service_pb2', _globals)
 if _descriptor._USE_C_DESCRIPTORS == False:
   DESCRIPTOR._options = None
   _globals['_VADREQUEST']._serialized_start=27
-  _globals['_VADREQUEST']._serialized_end=247
-  _globals['_CAMERAIMAGE']._serialized_start=249
-  _globals['_CAMERAIMAGE']._serialized_end=369
-  _globals['_IMUDATA']._serialized_start=372
-  _globals['_IMUDATA']._serialized_end=611
-  _globals['_ODOMETRY']._serialized_start=614
-  _globals['_ODOMETRY']._serialized_end=789
-  _globals['_STEERINGREPORT']._serialized_start=791
-  _globals['_STEERINGREPORT']._serialized_end=836
-  _globals['_VADRESPONSE']._serialized_start=838
-  _globals['_VADRESPONSE']._serialized_end=919
-  _globals['_PREDICTEDOBJECT']._serialized_start=922
-  _globals['_PREDICTEDOBJECT']._serialized_end=1114
-  _globals['_OBJECTCLASSIFICATION']._serialized_start=1116
-  _globals['_OBJECTCLASSIFICATION']._serialized_end=1174
-  _globals['_PREDICTEDOBJECTKINEMATICS']._serialized_start=1177
-  _globals['_PREDICTEDOBJECTKINEMATICS']._serialized_end=1449
-  _globals['_HEADER']._serialized_start=1451
-  _globals['_HEADER']._serialized_end=1492
-  _globals['_POSEWITHCOVARIANCE']._serialized_start=1494
-  _globals['_POSEWITHCOVARIANCE']._serialized_end=1559
-  _globals['_TWISTWITHCOVARIANCE']._serialized_start=1561
-  _globals['_TWISTWITHCOVARIANCE']._serialized_end=1629
-  _globals['_ACCELWITHCOVARIANCE']._serialized_start=1631
-  _globals['_ACCELWITHCOVARIANCE']._serialized_end=1699
-  _globals['_POSE']._serialized_start=1701
-  _globals['_POSE']._serialized_end=1775
-  _globals['_POINT']._serialized_start=1777
-  _globals['_POINT']._serialized_end=1817
-  _globals['_QUATERNION']._serialized_start=1819
-  _globals['_QUATERNION']._serialized_end=1875
-  _globals['_TWIST']._serialized_start=1877
-  _globals['_TWIST']._serialized_end=1945
-  _globals['_ACCEL']._serialized_start=1947
-  _globals['_ACCEL']._serialized_end=2015
-  _globals['_VECTOR3']._serialized_start=2017
-  _globals['_VECTOR3']._serialized_end=2059
-  _globals['_PREDICTEDPATH']._serialized_start=2061
-  _globals['_PREDICTEDPATH']._serialized_end=2155
-  _globals['_DURATION']._serialized_start=2157
-  _globals['_DURATION']._serialized_end=2197
-  _globals['_SHAPE']._serialized_start=2199
-  _globals['_SHAPE']._serialized_end=2253
-  _globals['_VADSERVICE']._serialized_start=2255
-  _globals['_VADSERVICE']._serialized_end=2319
+  _globals['_VADREQUEST']._serialized_end=277
+  _globals['_CAMERAIMAGE']._serialized_start=279
+  _globals['_CAMERAIMAGE']._serialized_end=399
+  _globals['_IMUDATA']._serialized_start=402
+  _globals['_IMUDATA']._serialized_end=641
+  _globals['_ODOMETRY']._serialized_start=644
+  _globals['_ODOMETRY']._serialized_end=819
+  _globals['_CANBUS']._serialized_start=821
+  _globals['_CANBUS']._serialized_end=939
+  _globals['_STEERINGREPORT']._serialized_start=941
+  _globals['_STEERINGREPORT']._serialized_end=986
+  _globals['_VADRESPONSE']._serialized_start=988
+  _globals['_VADRESPONSE']._serialized_end=1069
+  _globals['_PREDICTEDOBJECT']._serialized_start=1072
+  _globals['_PREDICTEDOBJECT']._serialized_end=1264
+  _globals['_OBJECTCLASSIFICATION']._serialized_start=1266
+  _globals['_OBJECTCLASSIFICATION']._serialized_end=1324
+  _globals['_PREDICTEDOBJECTKINEMATICS']._serialized_start=1327
+  _globals['_PREDICTEDOBJECTKINEMATICS']._serialized_end=1599
+  _globals['_HEADER']._serialized_start=1601
+  _globals['_HEADER']._serialized_end=1642
+  _globals['_POSEWITHCOVARIANCE']._serialized_start=1644
+  _globals['_POSEWITHCOVARIANCE']._serialized_end=1709
+  _globals['_TWISTWITHCOVARIANCE']._serialized_start=1711
+  _globals['_TWISTWITHCOVARIANCE']._serialized_end=1779
+  _globals['_ACCELWITHCOVARIANCE']._serialized_start=1781
+  _globals['_ACCELWITHCOVARIANCE']._serialized_end=1849
+  _globals['_POSE']._serialized_start=1851
+  _globals['_POSE']._serialized_end=1925
+  _globals['_POINT']._serialized_start=1927
+  _globals['_POINT']._serialized_end=1967
+  _globals['_QUATERNION']._serialized_start=1969
+  _globals['_QUATERNION']._serialized_end=2025
+  _globals['_TWIST']._serialized_start=2027
+  _globals['_TWIST']._serialized_end=2095
+  _globals['_ACCEL']._serialized_start=2097
+  _globals['_ACCEL']._serialized_end=2165
+  _globals['_VECTOR3']._serialized_start=2167
+  _globals['_VECTOR3']._serialized_end=2209
+  _globals['_PREDICTEDPATH']._serialized_start=2211
+  _globals['_PREDICTEDPATH']._serialized_end=2305
+  _globals['_DURATION']._serialized_start=2307
+  _globals['_DURATION']._serialized_end=2347
+  _globals['_SHAPE']._serialized_start=2349
+  _globals['_SHAPE']._serialized_end=2403
+  _globals['_VADSERVICE']._serialized_start=2405
+  _globals['_VADSERVICE']._serialized_end=2469
 # @@protoc_insertion_point(module_scope)

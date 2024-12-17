@@ -10,9 +10,12 @@ numpy==2.2.0
     # via
     #   vad-client (pyproject.toml)
     #   opencv-python
+    #   scipy
 opencv-python==4.10.0.84
     # via vad-client (pyproject.toml)
 protobuf==5.29.1
     # via grpcio-tools
+scipy==1.14.1
+    # via vad-client (pyproject.toml)
 setuptools==75.6.0
     # via grpcio-tools
