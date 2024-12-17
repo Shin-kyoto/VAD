@@ -68,7 +68,7 @@ class VADClient(Node):
             )
         self.create_subscription(
             Odometry,
-            '~/input/ego', # /localization/kinematic_state
+            '/localization/kinematic_state',
             self.ego_callback,
             qos_profile
         )
@@ -118,7 +118,7 @@ class VADClient(Node):
                 )
             self.dummy_odom_pub = self.create_publisher(
                 Odometry,
-                '~/input/ego',
+                '/localization/kinematic_state',
                 qos_profile
             )
             self.dummy_imu_pub = self.create_publisher(
@@ -322,9 +322,11 @@ class VADClient(Node):
     def try_process(self):
         """全てのカメラ画像が揃っているか確認して処理を実行"""
         if any(img is None for img in self.latest_images.values()):
+            print("Cannot get all camera data")
             return  # 全てのカメラ画像が揃っていない
 
         if not self.ego_history:
+            print("Cannot get odom")
             return  # オドメトリデータがない
             
         # bytes型に変換
