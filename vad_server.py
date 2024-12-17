@@ -86,6 +86,24 @@ class VADDummy:
             # one-hotベクトルの検証
             if not torch.allclose(cmd_tensor.sum(), torch.tensor(1.0)):
                 raise ValueError("ego_fut_cmd should be a one-hot vector")
+            
+        # ego_his_trajsの検証
+        if 'ego_his_trajs' in kwargs:
+            ego_his_trajs_list = kwargs['ego_his_trajs']
+            if not isinstance(ego_his_trajs_list, list) or len(ego_his_trajs_list) != 1:
+                raise ValueError("ego_his_trajs should be a list with single element")
+            
+            ego_his_trajs = ego_his_trajs_list[0]
+            if not isinstance(ego_his_trajs, DataContainer):
+                raise ValueError("ego_his_trajs element should be wrapped in DataContainer")
+            
+            trajs_tensor = ego_his_trajs.data
+            if trajs_tensor.shape != (1, 1, 2, 2):
+                raise ValueError(f"Expected ego_his_trajs shape (1, 1, 2, 2), got {trajs_tensor.shape}")
+            
+            # テンソルの値の妥当性を確認（オプション）
+            if torch.isnan(trajs_tensor).any():
+                raise ValueError("ego_his_trajs contains NaN values")
 
         # ダミーの予測結果を生成
         ego_fut_preds = torch.zeros(3, 6, 2)  # [3フレーム, 6パターン, (x, y)]
@@ -216,12 +234,40 @@ class VADServicer(vad_service_pb2_grpc.VADServiceServicer):
             ).view(1, 1, 1, 3).to(self.device)
             ego_fut_cmd_container = DataContainer(ego_fut_cmd_tensor, stack=True, padding_value=0)
 
+            latest_odom = request.ego_history[-1]
+            
+            # 現在の位置
+            current_pos = [
+                latest_odom.pose.pose.position.x, 
+                latest_odom.pose.pose.position.y
+            ]
+            
+            # 過去の位置（past_posesが存在する場合）
+            past_pos = current_pos  # デフォルトは現在の位置
+            if latest_odom.past_poses:
+                past_pos = [
+                    latest_odom.past_poses[0].x, 
+                    latest_odom.past_poses[0].y
+                ]
+            
+            # テンソルに変換
+            ego_his_trajs_tensor = torch.tensor([[[past_pos, current_pos]]]).float().to(self.device)
+            ego_his_trajs = DataContainer(ego_his_trajs_tensor, stack=True, padding_value=0)
+
             # モデル入力の準備
             input_data = {
                 'img': [img_container],
                 'img_metas': img_metas,
                 'ego_fut_cmd': [ego_fut_cmd_container],
                 'ego_lcf_feat': [ego_lcf_feat_container],
+                'gt_bboxes_3d': None,
+                'gt_labels_3d': None,
+                'prev_bev': None,
+                'points': None,
+                'fut_valid_flag': False,  # 追加
+                'ego_his_trajs': [ego_his_trajs],
+                'ego_fut_trajs': None,
+                'gt_attr_labels': None
             }
 
             # Process with VAD model

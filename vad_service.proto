@@ -39,6 +39,7 @@ message Odometry {
   string child_frame_id = 2;
   PoseWithCovariance pose = 3;
   TwistWithCovariance twist = 4;
+  repeated Point past_poses = 5;  // 過去の位置履歴を追加
 }
 
 message SteeringReport {

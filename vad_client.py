@@ -97,6 +97,7 @@ class VADClient(Node):
         self.latest_path = None
         self.latest_steering = None
         self.ego_history = []
+        self.past_poses = []
         
         # 経路からの運転コマンド（デフォルトは直進）
         self.driving_command = [0, 0, 1]
@@ -222,13 +223,28 @@ class VADClient(Node):
         self.latest_images[topic] = msg
         self.try_process()
         
-    def ego_callback(self, msg: Odometry):
+    def ego_callback(self, msg: Odometry, num_past_ego_pose: int = 2):
         self.get_logger().debug('Received odometry')
+        current_point = vad_service_pb2.Point(
+            x=msg.pose.pose.position.x, 
+            y=msg.pose.pose.position.y, 
+            z=msg.pose.pose.position.z
+        )
+
         # Convert ROS2 Odometry to proto Odometry
         proto_odom = self._convert_odom_to_proto(msg)
+        if not self.past_poses:
+            # past_posesが空の場合、current_pointを追加
+            proto_odom.past_poses.append(current_point)
+        else:
+            # past_posesの最新の位置を追加
+            proto_odom.past_poses.extend(self.past_poses[-1:])
+
         self.ego_history.append(proto_odom)
-        if len(self.ego_history) > 10:  # Keep last 10 poses
+        if len(self.ego_history) > num_past_ego_pose:  # Keep last num_past_ego_pose frames
             self.ego_history.pop(0)
+
+        self.past_poses.append(current_point)
         self.try_process()
 
     def imu_callback(self, msg: Imu):
@@ -292,13 +308,6 @@ class VADClient(Node):
     def _convert_odom_to_proto(self, msg: Odometry) -> vad_service_pb2.Odometry:
         proto_odom = vad_service_pb2.Odometry()
         
-        # Header
-        proto_odom.header.stamp = msg.header.stamp.sec * 1000000000 + msg.header.stamp.nanosec
-        proto_odom.header.frame_id = msg.header.frame_id
-        
-        # Child frame id
-        proto_odom.child_frame_id = msg.child_frame_id
-        
         # PoseWithCovariance
         proto_odom.pose.pose.position.x = msg.pose.pose.position.x
         proto_odom.pose.pose.position.y = msg.pose.pose.position.y
@@ -317,7 +326,7 @@ class VADClient(Node):
         proto_odom.twist.twist.angular.y = msg.twist.twist.angular.y
         proto_odom.twist.twist.angular.z = msg.twist.twist.angular.z
         proto_odom.twist.covariance.extend(msg.twist.covariance)
-        
+
         return proto_odom
         
     def try_process(self):
@@ -393,8 +402,6 @@ class VADClient(Node):
                 
     def publish_trajectory(self, response: vad_service_pb2.VADResponse):
         msg = PredictedObjects()
-        msg.header.stamp.sec = response.header.stamp // 1000000000
-        msg.header.stamp.nanosec = response.header.stamp % 1000000000
         msg.header.frame_id = response.header.frame_id
         
         for proto_obj in response.objects:
@@ -434,7 +441,8 @@ class VADClient(Node):
                 obj.kinematics.predicted_paths.append(predicted_path)
             
             msg.objects.append(obj)
-        
+        msg.header.stamp.sec = proto_path.time_step.sec
+        msg.header.stamp.nanosec = proto_path.time_step.nanosec
         self.trajectory_pub.publish(msg)
         self.get_logger().info('Published trajectory')
 
