@@ -184,7 +184,12 @@ class VADServicer(vad_service_pb2_grpc.VADServiceServicer):
             v0 = np.sqrt(ego_vx**2 + ego_vy**2)
             
             # ステアリング値の取得と曲率計算
-            steering = request.steering_angle if hasattr(request, 'steering_angle') else 0.0
+            if hasattr(request, 'steering') and request.steering:
+                steering = request.steering.steering_tire_angle
+                print(f"Using steering angle: {steering} rad")
+            else:
+                steering = 0.0
+                print("No steering data available, using dummy value")
             steering *= -1  # 左ハンドル交通の場合は反転
             Kappa = 2 * np.tan(steering) / self.vehicle_params.wheel_base
 

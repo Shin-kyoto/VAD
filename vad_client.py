@@ -365,11 +365,16 @@ class VADClient(Node):
             )
             camera_images.append(camera_image)
 
+        steering_report = vad_service_pb2.SteeringReport(
+            steering_tire_angle=self.latest_steering if self.latest_steering is not None else 0.0
+        )
+
         request = vad_service_pb2.VADRequest(
             images=camera_images,
             ego_history=self.ego_history,
             map_data=b'dummy_map',  # Replace with actual map data
-            driving_command=self.driving_command
+            driving_command=self.driving_command,
+            steering=steering_report,
         )
         try:
             self.get_logger().info('Sending request to VAD server')
