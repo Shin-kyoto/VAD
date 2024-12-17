@@ -112,9 +112,13 @@ class VADServicer(vad_service_pb2_grpc.VADServiceServicer):
         try:
             timestamp = 0.0
             # timestamp = request.image_timestamp
-            # Convert image data
-            nparr = np.frombuffer(request.image_data, np.uint8)
-            image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+            camera_images = {}
+            for camera_image in request.images:
+                # 画像データをデコード
+                nparr = np.frombuffer(camera_image.image_data, np.uint8)
+                image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                camera_images[camera_image.camera_id] = image
 
             # img_metasの作成
             img_metas = [[{
@@ -153,7 +157,7 @@ class VADServicer(vad_service_pb2_grpc.VADServiceServicer):
 
             # モデル入力の準備
             input_data = {
-                'img': [[torch.from_numpy(image).permute(2, 0, 1).float().to(self.device)]],
+                'img': [[torch.from_numpy(list(camera_images.values())[0]).permute(2, 0, 1).float().to("cuda:0")]],
                 'img_metas': img_metas,
                 'ego_fut_cmd': [[torch.tensor([0, 0, 1], dtype=torch.float32).to(self.device)]],
                 'ego_lcf_feat': [[ego_lcf_feat.to(self.device)]],

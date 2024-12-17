@@ -331,15 +331,25 @@ class VADClient(Node):
             
         # bytes型に変換
         # TODO(Shin-kyoto): send 6 images
-        image_name = "/sensing/camera/camera0/image_rect_color/compressed"
-        if isinstance(self.latest_images[image_name], array.array):
-            image_data = bytes(self.latest_images[image_name])
-        else:
-            image_data = self.latest_images[image_name]
+        # カメラ画像を準備
+        camera_images = []
+        for camera_id in range(6):
+            topic = f'/sensing/camera/camera{camera_id}/image_rect_color/compressed'
+            image_data = self.latest_images[topic]
+            
+            # bytes型に変換
+            if isinstance(image_data, array.array):
+                image_data = bytes(image_data)
+                
+            camera_image = vad_service_pb2.CameraImage(
+                image_data=image_data,
+                encoding='jpeg',
+                camera_id=camera_id
+            )
+            camera_images.append(camera_image)
 
         request = vad_service_pb2.VADRequest(
-            image_data=image_data,
-            image_encoding='jpeg',
+            images=camera_images,
             ego_history=self.ego_history,
             map_data=b'dummy_map',  # Replace with actual map data
             driving_command=self.driving_command

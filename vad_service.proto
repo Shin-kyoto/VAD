@@ -8,12 +8,18 @@ service VADService {
 
 // Request messages
 message VADRequest {
-  bytes image_data = 1;
+  repeated CameraImage images = 1;
   string image_encoding = 2;
   repeated Odometry ego_history = 3;
   bytes map_data = 4;
   repeated float driving_command = 5;  // one-hot vector [right, left, straight]
   ImuData imu_data = 6;
+}
+
+message CameraImage {
+ bytes image_data = 1;
+ string encoding = 2;
+ int32 camera_id = 3;  // 0-5のカメラID
 }
 
 message ImuData {
