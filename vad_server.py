@@ -83,15 +83,22 @@ class VADDummy:
         return obj
 
 class VADServicer(vad_service_pb2_grpc.VADServiceServicer):
-    def __init__(self, vehicle_info_path: Path):
+    def __init__(self, vehicle_info_path: Path, device: str = "cuda:0"):
         self.vad_model = VADDummy()
         self.vehicle_params = VehicleParams(vehicle_info_path)
+        self.device = device
     
     def ProcessData(self, request, context):
         try:
             # Convert image data
             nparr = np.frombuffer(request.image_data, np.uint8)
             image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+            # img_metasの作成
+            img_metas = [[{
+                'scene_token': '0',  # ダミーのscene_token
+                'can_bus': np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], dtype=np.float32),
+            }]]
 
             # Odometryから速度と角速度を取得
             latest_odom = request.ego_history[-1]
@@ -122,13 +129,13 @@ class VADServicer(vad_service_pb2_grpc.VADServiceServicer):
             ego_lcf_feat[7] = torch.tensor(v0)
             ego_lcf_feat[8] = torch.tensor(Kappa)
 
-            # # モデル入力の準備
-            # input_data = {
-            #     'img': [[torch.from_numpy(image).permute(2, 0, 1).float().to("cuda:0")]],
-            #     'img_metas': img_metas,
-            #     'ego_fut_cmd': [[torch.tensor([0, 0, 1], dtype=torch.float32).to("cuda:0")]],
-            #     'ego_lcf_feat': [[ego_lcf_feat.to("cuda:0")]],
-            # }
+            # モデル入力の準備
+            input_data = {
+                'img': [[torch.from_numpy(image).permute(2, 0, 1).float().to(self.device)]],
+                'img_metas': img_metas,
+                'ego_fut_cmd': [[torch.tensor([0, 0, 1], dtype=torch.float32).to(self.device)]],
+                'ego_lcf_feat': [[ego_lcf_feat.to(self.device)]],
+            }
 
             # Process with VAD model
             predicted_object = self.vad_model.predict(
