@@ -13,6 +13,16 @@ message VADRequest {
   repeated Odometry ego_history = 3;
   bytes map_data = 4;
   repeated float driving_command = 5;  // one-hot vector [right, left, straight]
+  ImuData imu_data = 6;
+}
+
+message ImuData {
+ Quaternion orientation = 1;
+ repeated double orientation_covariance = 2;  // 9要素の配列
+ Vector3 angular_velocity = 3;
+ repeated double angular_velocity_covariance = 4;  // 9要素の配列
+ Vector3 linear_acceleration = 5;
+ repeated double linear_acceleration_covariance = 6;  // 9要素の配列
 }
 
 message Odometry {
