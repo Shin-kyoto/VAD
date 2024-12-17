@@ -60,7 +60,16 @@ class VADDummy:
 
         if not isinstance(kwargs["img"][0], DataContainer):
             raise ValueError("Input image should be wrapped in DataContainer")
-           
+        
+        if 'ego_lcf_feat' in kwargs:
+            ego_lcf = kwargs['ego_lcf_feat'][0]
+            if not isinstance(ego_lcf, DataContainer):
+                raise ValueError("ego_lcf_feat should be wrapped in DataContainer")
+            
+            feat_tensor = ego_lcf.data
+            if feat_tensor.shape != (1, 1, 1, 9):
+                raise ValueError(f"Expected ego_lcf_feat shape (1, 1, 1, 9), got {feat_tensor.shape}")
+
         # ダミーの予測結果を生成
         ego_fut_preds = torch.zeros(3, 6, 2)  # [3フレーム, 6パターン, (x, y)]
         
@@ -145,8 +154,14 @@ class VADServicer(vad_service_pb2_grpc.VADServiceServicer):
             ego_vy = latest_odom.twist.twist.linear.y
             ego_w = latest_odom.twist.twist.angular.z
 
-            # 加速度（現状はダミー値、将来的にはIMUから取得）
-            ax, ay = 0.0, 0.0
+            # IMUから加速度を取得
+            if hasattr(request, 'imu_data') and request.imu_data:
+                ax = request.imu_data.linear_acceleration.x
+                ay = request.imu_data.linear_acceleration.y
+            else:
+                # IMUデータがない場合はダミー値
+                ax, ay = 0.0, 0.0
+                self.get_logger().warn("No IMU data available, using dummy values")
             
             # 速度の大きさ
             v0 = np.sqrt(ego_vx**2 + ego_vy**2)
@@ -157,23 +172,26 @@ class VADServicer(vad_service_pb2_grpc.VADServiceServicer):
             Kappa = 2 * np.tan(steering) / self.vehicle_params.wheel_base
 
             # ego_lcf_featの作成
-            ego_lcf_feat = torch.zeros(9, dtype=torch.float32)
-            ego_lcf_feat[0:2] = torch.tensor([ego_vx, ego_vy])
-            ego_lcf_feat[2:4] = torch.tensor([ax, ay])
-            ego_lcf_feat[4] = torch.tensor(ego_w)
-            ego_lcf_feat[5:7] = torch.tensor([
+            ego_lcf_feat_raw = torch.tensor([
+                ego_vx, ego_vy,      # 速度
+                ax, ay,              # 加速度（IMU）
+                ego_w,               # 角速度
                 self.vehicle_params.vehicle_length,
-                self.vehicle_params.vehicle_width
-            ])
-            ego_lcf_feat[7] = torch.tensor(v0)
-            ego_lcf_feat[8] = torch.tensor(Kappa)
+                self.vehicle_params.vehicle_width,
+                v0,                  # 速度の大きさ
+                Kappa                # 曲率
+            ], dtype=torch.float32).to(self.device)
+
+            # [1, 1, 1, 9]の形状に変形
+            ego_lcf_feat_tensor = ego_lcf_feat_raw.view(1, 1, 1, -1)
+            ego_lcf_feat_container = DataContainer(ego_lcf_feat_tensor, stack=True, padding_value=0)
 
             # モデル入力の準備
             input_data = {
                 'img': [img_container],
                 'img_metas': img_metas,
                 'ego_fut_cmd': [[torch.tensor([0, 0, 1], dtype=torch.float32).to(self.device)]],
-                'ego_lcf_feat': [[ego_lcf_feat.to(self.device)]],
+                'ego_lcf_feat': [ego_lcf_feat_container],
             }
 
             # Process with VAD model
