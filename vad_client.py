@@ -329,7 +329,23 @@ class VADClient(Node):
         if not self.ego_history:
             print("Cannot get odom")
             return  # オドメトリデータがない
+
+        # 最初にすべての画像のサイズをチェック
+        first_shape = None
+        for camera_id in range(6):
+            topic = f'/sensing/camera/camera{camera_id}/image_rect_color/compressed'
+            image_data = self.latest_images[topic]
+            nparr = np.frombuffer(image_data, np.uint8)
+            image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
             
+            if first_shape is None:
+                first_shape = image.shape
+            elif image.shape != first_shape:
+                self.get_logger().error(
+                    f'Image size mismatch: camera0 is {first_shape} but camera{camera_id} is {image.shape}. If you are running rosbag while using --dummy-pub, you may get this error.'
+                )
+                return 
+
         # bytes型に変換
         # TODO(Shin-kyoto): send 6 images
         # カメラ画像を準備
@@ -361,8 +377,12 @@ class VADClient(Node):
             # self.get_logger().info(f'Received response from VAD server: {response}')
             self.publish_trajectory(response)
         except grpc.RpcError as e:
-            self.get_logger().error(f'RPC failed')
-            # self.get_logger().error(f'RPC failed: {e.code()}: {e.details()}')
+            self.get_logger().error(f'RPC failed: code={e.code()}, details={e.details()}')
+            self.get_logger().error(f'Debug error string: {e.debug_error_string()}')
+        except Exception as e:
+            self.get_logger().error(f'Unexpected error: {str(e)}')
+            import traceback
+            self.get_logger().error(traceback.format_exc())
                 
     def publish_trajectory(self, response: vad_service_pb2.VADResponse):
         msg = PredictedObjects()
