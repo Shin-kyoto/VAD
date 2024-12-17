@@ -1,3 +1,4 @@
+import argparse
 import grpc
 import vad_service_pb2
 import vad_service_pb2_grpc
@@ -426,13 +427,19 @@ class VADClient(Node):
         ros_pose.covariance = list(proto_pose.covariance)
         
         return ros_pose
+
+def parse_args():
+   parser = argparse.ArgumentParser(description='VAD Client')
+   parser.add_argument('--dummy-pub', action='store_true',
+                      help='Enable dummy publisher mode')
+   return parser.parse_args()
+
 def main(args=None):
-   rclpy.init(args=args)
+   rclpy.init()
    
-   # ダミーモードで起動するかどうかをコマンドライン引数などで制御可能
-   dummy_mode = True  # or False
-   
-   client = VADClient(dummy_mode=dummy_mode)
+   args = parse_args()
+
+   client = VADClient(dummy_mode=args.dummy_pub)
    try:
        rclpy.spin(client)
    except KeyboardInterrupt:
