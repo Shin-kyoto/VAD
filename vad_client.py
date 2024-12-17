@@ -219,7 +219,7 @@ class VADClient(Node):
     def image_callback(self, msg: CompressedImage, topic: str):
         """カメラ画像のコールバック"""
         self.get_logger().debug(f'Received image from {topic}')
-        self.latest_images[topic] = msg.data
+        self.latest_images[topic] = msg
         self.try_process()
         
     def ego_callback(self, msg: Odometry):
@@ -334,7 +334,7 @@ class VADClient(Node):
         first_shape = None
         for camera_id in range(6):
             topic = f'/sensing/camera/camera{camera_id}/image_rect_color/compressed'
-            image_data = self.latest_images[topic]
+            image_data = self.latest_images[topic].data
             nparr = np.frombuffer(image_data, np.uint8)
             image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
             
@@ -352,16 +352,18 @@ class VADClient(Node):
         camera_images = []
         for camera_id in range(6):
             topic = f'/sensing/camera/camera{camera_id}/image_rect_color/compressed'
-            image_data = self.latest_images[topic]
+            image_topic = self.latest_images[topic]
             
             # bytes型に変換
-            if isinstance(image_data, array.array):
-                image_data = bytes(image_data)
+            if isinstance(image_topic.data, array.array):
+                image_data = bytes(image_topic.data)
                 
             camera_image = vad_service_pb2.CameraImage(
                 image_data=image_data,
                 encoding='jpeg',
-                camera_id=camera_id
+                camera_id=camera_id,
+                time_step_sec=image_topic.header.stamp.sec,
+                time_step_nanosec=image_topic.header.stamp.nanosec
             )
             camera_images.append(camera_image)
 

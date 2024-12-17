@@ -109,7 +109,7 @@ class VADServicer(vad_service_pb2_grpc.VADServiceServicer):
         self.vehicle_params = VehicleParams(vehicle_info_path)
         self.device = device
 
-    def create_predicted_object_from_trajectory(self, trajectory: torch.Tensor, confidence: float, timestamp):
+    def create_predicted_object_from_trajectory(self, trajectory: torch.Tensor, confidence: float, timestamp_sec: int, timestamp_nanosec: int):
         """単一の軌道をPredictedObjectに変換"""
         obj = vad_service_pb2.PredictedObject(
             uuid=str(uuid.uuid4()),
@@ -134,16 +134,17 @@ class VADServicer(vad_service_pb2_grpc.VADServiceServicer):
             pose.orientation.w = 1.0
             
         # 画像のタイムスタンプを使用
-        path.time_step.sec = 0
-        path.time_step.nanosec = 100000000  # 0.1 second
+        path.time_step.sec = timestamp_sec
+        path.time_step.nanosec = timestamp_nanosec
         path.confidence = float(confidence)
         
         return obj
 
     def ProcessData(self, request, context):
         try:
-            timestamp = 0.0
-            # timestamp = request.image_timestamp
+            # カメラ0の時刻情報を取得
+            timestamp_sec = request.images[0].time_step_sec
+            timestamp_nanosec = request.images[0].time_step_nanosec
 
             camera_images = {}
             for camera_image in request.images:
@@ -235,7 +236,8 @@ class VADServicer(vad_service_pb2_grpc.VADServiceServicer):
                 predicted_object = self.create_predicted_object_from_trajectory(
                         trajectory=trajectory,
                         confidence=confidences[traj_idx],
-                        timestamp=timestamp,
+                        timestamp_sec=timestamp_sec,
+                        timestamp_nanosec=timestamp_nanosec,
                     )
                 predcicted_objects.append(predicted_object)
             

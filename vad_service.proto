@@ -21,6 +21,8 @@ message CameraImage {
  bytes image_data = 1;
  string encoding = 2;
  int32 camera_id = 3;  // 0-5のカメラID
+ int64 time_step_sec = 4;    // 画像のタイムスタンプ（秒）
+ uint32 time_step_nanosec = 5;  // 画像のタイムスタンプ（ナノ秒）
 }
 
 message ImuData {
