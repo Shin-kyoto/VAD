@@ -230,6 +230,7 @@ class VADServicer(vad_service_pb2_grpc.VADServiceServicer):
             ego_fut_preds = output[0]['pts_bbox']['ego_fut_preds']
 
             predcicted_objects = []
+            # TODO(Shin-kyoto): use predicted score for trajectory
             confidences = np.linspace(1.0, 0.5, ego_fut_preds.shape[1])  # 6つの予測に対する信頼度を設定
             for traj_idx in range(ego_fut_preds.shape[1]):
                 trajectory = ego_fut_preds[:, traj_idx, :]  # (3, 2)の軌道データ
