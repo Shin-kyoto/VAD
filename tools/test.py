@@ -133,7 +133,7 @@ def main():
         raise ValueError('The output file must be a pkl file.')
 
     cfg = Config.fromfile(args.config)
-    if args.cfg_options is not None:
+    if args.cfg_options is not None: # False
         cfg.merge_from_dict(args.cfg_options)
     # import modules from string list.
     if cfg.get('custom_imports', None):
@@ -141,10 +141,10 @@ def main():
         import_modules_from_strings(**cfg['custom_imports'])
 
     # import modules from plguin/xx, registry will be updated
-    if hasattr(cfg, 'plugin'):
-        if cfg.plugin:
+    if hasattr(cfg, 'plugin'): # True
+        if cfg.plugin: # True
             import importlib
-            if hasattr(cfg, 'plugin_dir'):
+            if hasattr(cfg, 'plugin_dir'): # True
                 plugin_dir = cfg.plugin_dir
                 _module_dir = os.path.dirname(plugin_dir)
                 _module_dir = _module_dir.split('/')
@@ -165,13 +165,13 @@ def main():
                 plg_lib = importlib.import_module(_module_path)
 
     # set cudnn_benchmark
-    if cfg.get('cudnn_benchmark', False):
+    if cfg.get('cudnn_benchmark', False): # False
         torch.backends.cudnn.benchmark = True
 
     cfg.model.pretrained = None
     # in case the test dataset is concatenated
     samples_per_gpu = 1
-    if isinstance(cfg.data.test, dict):
+    if isinstance(cfg.data.test, dict): # True
         cfg.data.test.test_mode = True
         samples_per_gpu = cfg.data.test.pop('samples_per_gpu', 1)
         if samples_per_gpu > 1:
@@ -213,19 +213,19 @@ def main():
     cfg.model.train_cfg = None
     model = build_model(cfg.model, test_cfg=cfg.get('test_cfg'))
     fp16_cfg = cfg.get('fp16', None)
-    if fp16_cfg is not None:
+    if fp16_cfg is not None: # False
         wrap_fp16_model(model)
     checkpoint = load_checkpoint(model, args.checkpoint, map_location='cpu')
     if args.fuse_conv_bn:
         model = fuse_conv_bn(model)
     # old versions did not save class info in checkpoints, this walkaround is
     # for backward compatibility
-    if 'CLASSES' in checkpoint.get('meta', {}):
+    if 'CLASSES' in checkpoint.get('meta', {}): # True
         model.CLASSES = checkpoint['meta']['CLASSES']
     else:
         model.CLASSES = dataset.CLASSES
     # palette for visualization in segmentation tasks
-    if 'PALETTE' in checkpoint.get('meta', {}):
+    if 'PALETTE' in checkpoint.get('meta', {}): # True
         model.PALETTE = checkpoint['meta']['PALETTE']
     elif hasattr(dataset, 'PALETTE'):
         # segmentation dataset has `PALETTE` attribute

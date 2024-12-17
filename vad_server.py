@@ -137,6 +137,7 @@ class VADWrapper:
         model.PALETTE = checkpoint['meta']['PALETTE']
 
         self.model = MMDataParallel(model, device_ids=[0])
+        self.cfg = cfg
 
 
 
@@ -396,13 +397,72 @@ class VADServicer(vad_service_pb2_grpc.VADServiceServicer):
                 'fut_valid_flag': False,  # 追加
                 'ego_his_trajs': [ego_his_trajs],
                 'ego_fut_trajs': None,
+                'ego_fut_masks': None,
+                'map_gt_labels_3d': None,
+                'map_gt_bboxes_3d': None,
                 'gt_attr_labels': None
             }
 
+            def deep_compare_img_metas(metas1, metas2):
+                print("img_metas comparison:")
+                print(f"Type of metas1: {type(metas1)}")
+                print(f"Type of metas2: {type(metas2)}")
+                
+                print("\nFirst item types:")
+                print(f"metas1[0] type: {type(metas1[0])}")
+                print(f"metas2[0] type: {type(metas2[0])}")
+                
+                if isinstance(metas1[0], DataContainer) and isinstance(metas2[0], DataContainer):
+                    print("\nDataContainer details:")
+                    print(f"metas1[0].data type: {type(metas1[0].data)}")
+                    print(f"metas2[0].data type: {type(metas2[0].data)}")
+                    
+                    print("\nInspecting data structure:")
+                    print(f"metas1[0].data: {metas1[0].data}")
+                    print(f"metas2[0].data: {metas2[0].data}")
+
+            # build the dataloader
+            cfg = self.vad_wrapper.cfg
+            samples_per_gpu = 1
+            if isinstance(cfg.data.test, dict):
+                cfg.data.test.test_mode = True
+                samples_per_gpu = cfg.data.test.pop('samples_per_gpu', 1)
+                if samples_per_gpu > 1:
+                    # Replace 'ImageToTensor' to 'DefaultFormatBundle'
+                    cfg.data.test.pipeline = replace_ImageToTensor(
+                        cfg.data.test.pipeline)
+            elif isinstance(cfg.data.test, list):
+                for ds_cfg in cfg.data.test:
+                    ds_cfg.test_mode = True
+                samples_per_gpu = max(
+                    [ds_cfg.pop('samples_per_gpu', 1) for ds_cfg in cfg.data.test])
+                if samples_per_gpu > 1:
+                    for ds_cfg in cfg.data.test:
+                        ds_cfg.pipeline = replace_ImageToTensor(ds_cfg.pipeline)
+            dataset = build_dataset(cfg.data.test)
+            distributed = False
+            data_loader = build_dataloader(
+                dataset,
+                samples_per_gpu=samples_per_gpu,
+                workers_per_gpu=cfg.data.workers_per_gpu,
+                dist=distributed,
+                shuffle=False,
+                nonshuffler_sampler=cfg.data.nonshuffler_sampler,
+            )
+
+            for i, data in enumerate(data_loader):
+                if i > 1:
+                    break
+                with torch.no_grad():
+                    output = self.vad_wrapper.model(return_loss=False, rescale=True, **data)
+                    _output = self.vad_wrapper.model(return_loss=False, rescale=True, **input_data)
+                deep_compare_img_metas(data['img_metas'], input_data['img_metas'])
+                import pdb;pdb.set_trace()
             # Process with VAD model
-            output = self.vad_model(return_loss=False, rescale=True, **input_data)
-            # with torch.no_grad():
-            #     output = self.vad_wrapper.model(return_loss=False, rescale=True, **input_data)
+            # output = self.vad_model(return_loss=False, rescale=True, **input_data)
+            with torch.no_grad():
+                import pdb;pdb.set_trace()
+                output = self.vad_wrapper.model(return_loss=False, rescale=True, **input_data)
             # ego_fut_predsを取得 (shape: [3, 6, 2])
             ego_fut_preds = output[0]['pts_bbox']['ego_fut_preds']
 
