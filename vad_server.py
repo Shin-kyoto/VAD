@@ -69,6 +69,23 @@ class VADDummy:
             feat_tensor = ego_lcf.data
             if feat_tensor.shape != (1, 1, 1, 9):
                 raise ValueError(f"Expected ego_lcf_feat shape (1, 1, 1, 9), got {feat_tensor.shape}")
+            
+        if 'ego_fut_cmd' in kwargs:
+            ego_cmd_list = kwargs['ego_fut_cmd']
+            if not isinstance(ego_cmd_list, list) or len(ego_cmd_list) != 1:
+                raise ValueError("ego_fut_cmd should be a list with single element")
+                
+            ego_cmd = ego_cmd_list[0]
+            if not isinstance(ego_cmd, DataContainer):
+                raise ValueError("ego_fut_cmd element should be wrapped in DataContainer")
+            
+            cmd_tensor = ego_cmd.data
+            if cmd_tensor.shape != (1, 1, 1, 3):
+                raise ValueError(f"Expected ego_fut_cmd shape (1, 1, 1, 3), got {cmd_tensor.shape}")
+            
+            # one-hotベクトルの検証
+            if not torch.allclose(cmd_tensor.sum(), torch.tensor(1.0)):
+                raise ValueError("ego_fut_cmd should be a one-hot vector")
 
         # ダミーの予測結果を生成
         ego_fut_preds = torch.zeros(3, 6, 2)  # [3フレーム, 6パターン, (x, y)]
@@ -186,11 +203,18 @@ class VADServicer(vad_service_pb2_grpc.VADServiceServicer):
             ego_lcf_feat_tensor = ego_lcf_feat_raw.view(1, 1, 1, -1)
             ego_lcf_feat_container = DataContainer(ego_lcf_feat_tensor, stack=True, padding_value=0)
 
+            # driving_commandを[1, 1, 1, 3]の形状に変形
+            ego_fut_cmd_tensor = torch.tensor(
+                request.driving_command, 
+                dtype=torch.float32
+            ).view(1, 1, 1, 3).to(self.device)
+            ego_fut_cmd_container = DataContainer(ego_fut_cmd_tensor, stack=True, padding_value=0)
+
             # モデル入力の準備
             input_data = {
                 'img': [img_container],
                 'img_metas': img_metas,
-                'ego_fut_cmd': [[torch.tensor([0, 0, 1], dtype=torch.float32).to(self.device)]],
+                'ego_fut_cmd': [ego_fut_cmd_container],
                 'ego_lcf_feat': [ego_lcf_feat_container],
             }
 
