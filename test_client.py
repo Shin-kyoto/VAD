@@ -4,9 +4,11 @@ import vad_service_pb2_grpc
 import cv2
 import numpy as np
 import array
+from typing import List
+
 import rclpy
 from rclpy.node import Node
-from sensor_msgs.msg import CompressedImage
+from sensor_msgs.msg import CompressedImage, Imu
 from nav_msgs.msg import Odometry 
 from autoware_perception_msgs.msg import (
     PredictedObjects,
@@ -15,6 +17,8 @@ from autoware_perception_msgs.msg import (
     ObjectClassification,
     PredictedObjectKinematics
 )
+from tier4_planning_msgs.msg import PathWithLaneId, PathPointWithLaneId
+from autoware_vehicle_msgs.msg import SteeringReport
 from geometry_msgs.msg import (
     PoseWithCovariance,
     TwistWithCovariance,
@@ -50,11 +54,38 @@ class VADClient(Node):
         )
         self.create_subscription(
             Odometry,
-            '~/input/ego',
+            '~/input/ego', # /localization/kinematic_state
             self.ego_callback,
             qos_profile
         )
+        self.create_subscription(
+            Imu,
+            '/sensing/imu/tamagawa/imu_raw',
+            self.imu_callback,
+            qos_profile
+        )
+        self.create_subscription(
+            PathWithLaneId,
+            '/planning/scenario_planning/lane_driving/behavior_planning/path_with_lane_id',
+            self.path_callback,
+            qos_profile
+        )
+        self.create_subscription(
+            SteeringReport,
+            '/vehicle/status/steering_status',
+            self.steering_callback,
+            qos_profile
+        )
+        # Store latest data
+        self.latest_image = None
+        self.latest_imu = None
+        self.latest_path = None
+        self.latest_steering = None
+        self.ego_history = []
         
+        # 経路からの運転コマンド（デフォルトは直進）
+        self.driving_command = [0, 0, 1]
+
         # Publisher for predicted objects
         self.trajectory_pub = self.create_publisher(
             PredictedObjects,
@@ -72,6 +103,21 @@ class VADClient(Node):
             self.dummy_odom_pub = self.create_publisher(
                 Odometry,
                 '~/input/ego',
+                qos_profile
+            )
+            self.dummy_imu_pub = self.create_publisher(
+                Imu,
+                '/sensing/imu/tamagawa/imu_raw',
+                qos_profile
+            )
+            self.dummy_path_pub = self.create_publisher(
+                PathWithLaneId,
+                '/planning/scenario_planning/lane_driving/behavior_planning/path_with_lane_id',
+                qos_profile
+            )
+            self.dummy_steering_pub = self.create_publisher(
+                SteeringReport,
+                '/vehicle/status/steering_status',
                 qos_profile
             )
             # ダミーデータ生成用のタイマー（10Hz）
@@ -125,6 +171,32 @@ class VADClient(Node):
         dummy_odom.twist.covariance = [0.0] * 36
         
         self.dummy_odom_pub.publish(dummy_odom)
+
+        # IMUのダミーデータ
+        dummy_imu = Imu()
+        dummy_imu.header.stamp = current_time.to_msg()
+        dummy_imu.header.frame_id = "base_link"
+        dummy_imu.orientation = Quaternion(x=0.0, y=0.0, z=0.0, w=1.0)
+        dummy_imu.linear_acceleration = Vector3(x=0.0, y=0.0, z=9.81)
+        dummy_imu.angular_velocity = Vector3(x=0.0, y=0.0, z=0.0)
+        self.dummy_imu_pub.publish(dummy_imu)
+        
+        # PathWithLaneIdのダミーデータ
+        dummy_path = PathWithLaneId()
+        dummy_path.header.stamp = current_time.to_msg()
+        dummy_path.header.frame_id = "map"
+        # ダミーの直進パス
+        point = PathPointWithLaneId()
+        point.point.pose.position = Point(x=1.0, y=0.0, z=0.0)
+        point.point.pose.orientation = Quaternion(w=1.0)
+        dummy_path.points.append(point)
+        self.dummy_path_pub.publish(dummy_path)
+        
+        # SteeringReportのダミーデータ
+        dummy_steering = SteeringReport()
+        dummy_steering.stamp = current_time.to_msg()
+        dummy_steering.steering_tire_angle = 0.0
+        self.dummy_steering_pub.publish(dummy_steering)
         
     def image_callback(self, msg: CompressedImage):
         self.get_logger().debug('Received image')
@@ -139,6 +211,25 @@ class VADClient(Node):
         if len(self.ego_history) > 10:  # Keep last 10 poses
             self.ego_history.pop(0)
         self.try_process()
+
+    def imu_callback(self, msg: Imu):
+        self.get_logger().debug('Received IMU data')
+        self.latest_imu = msg
+        
+    def path_callback(self, msg: PathWithLaneId):
+        self.get_logger().debug('Received path data')
+        self.latest_path = msg
+        # パスから運転コマンドを計算（実装は別途必要）
+        self.driving_command = self._compute_driving_command(msg)
+        
+    def steering_callback(self, msg: SteeringReport):
+        self.get_logger().debug('Received steering data')
+        self.latest_steering = msg
+        
+    def _compute_driving_command(self, path_msg: PathWithLaneId) -> List[float]:
+        """パスから運転コマンド（右折/左折/直進）を計算"""
+        # TODO: パスの形状から進行方向を判断する処理を実装
+        return [0, 0, 1]  # デフォルトは直進
 
     def _convert_odom_to_proto(self, msg: Odometry) -> vad_service_pb2.Odometry:
         proto_odom = vad_service_pb2.Odometry()
