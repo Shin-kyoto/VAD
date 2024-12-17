@@ -49,7 +49,28 @@ class VADDummy:
     def setup_model(self):
         # Dummy model setup
         pass
+
+    def __call__(self, return_loss=False, rescale=True, **kwargs):
+        """VADモデルと同じインターフェースを提供"""
+        return self.forward_test(**kwargs)
+
+    def forward_test(self, **kwargs):
+        # ダミーの予測結果を生成
+        ego_fut_preds = torch.zeros(3, 6, 2)  # [3フレーム, 6パターン, (x, y)]
         
+        # 単純な直線的な軌道を生成
+        for i in range(6):  # 6つの予測パターン
+            for t in range(3):  # 3フレーム
+                ego_fut_preds[t, i, 0] = t * (i + 1)  # x座標
+                ego_fut_preds[t, i, 1] = t * (i + 1)  # y座標
+
+        # VADモデルの出力形式に合わせる
+        return [{
+            'pts_bbox': {
+                'ego_fut_preds': ego_fut_preds
+            }
+        }]
+
     def predict(self, image, ego_history, map_data, driving_command):
         # Create dummy prediction
         obj = vad_service_pb2.PredictedObject(
@@ -138,6 +159,9 @@ class VADServicer(vad_service_pb2_grpc.VADServiceServicer):
             }
 
             # Process with VAD model
+            output = self.vad_model(return_loss=False, rescale=True, **input_data)
+            # ego_fut_predsを取得 (shape: [3, 6, 2])
+            ego_fut_preds = output[0]['pts_bbox']['ego_fut_preds']
             predicted_object = self.vad_model.predict(
                 image,
                 request.ego_history,
