@@ -269,11 +269,14 @@ class VADServicer(vad_service_pb2_grpc.VADServiceServicer):
                 image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
                 camera_images[camera_image.camera_id] = image
 
+            resized_images = [cv2.resize(img, (1280, 736), interpolation=cv2.INTER_LINEAR) for img in camera_images.values()]
+            
             print("Processing images")
             img_tensor = torch.stack([
                 torch.from_numpy(img).permute(2, 0, 1).float() 
-                for img in camera_images.values()
+                for img in resized_images
             ]).to(self.device)
+            img_tensor = img_tensor.view(1, 6, 3, 736, 1280)
             img_container = DataContainer(img_tensor, stack=True, padding_value=0)
 
             # Odometryから速度と角速度を取得
@@ -351,11 +354,54 @@ class VADServicer(vad_service_pb2_grpc.VADServiceServicer):
             can_bus[-2] = patch_angle / 180 * np.pi
             can_bus[-1] = patch_angle
 
+            lidar2img_stacked = np.stack([
+                np.array([
+                    [ 9.93813460e+02, 6.73319543e+02, 2.75733627e+01, -2.84137097e+02], 
+                    [-1.38022223e+01, 4.29775748e+02, -9.80293378e+02, -5.16318806e+02], 
+                    [-1.25768144e-02, 9.98442012e-01, 5.43633383e-02, -4.28792161e-01], 
+                    [ 0.00000000e+00, 0.00000000e+00, 0.00000000e+00, 1.00000000e+00]
+                ]),
+                np.array([
+                    [ 1.09226932e+03, -4.94774976e+02, -3.14710481e+01, -3.67329105e+02], 
+                    [ 3.04357841e+02, 2.56876688e+02, -9.91431030e+02, -5.52985866e+02], 
+                    [ 8.43070387e-01, 5.36777384e-01, 3.32018426e-02, -6.09714569e-01], 
+                    [ 0.00000000e+00, 0.00000000e+00, 0.00000000e+00, 1.00000000e+00]
+                ]),
+                np.array([
+                    [ 2.45182066e+01, 1.20253470e+03, 6.24384489e+01, -2.49669138e+02], 
+                    [-3.10434650e+02, 2.56270779e+02, -9.90304548e+02, -5.44706073e+02], 
+                    [-8.24078173e-01, 5.65041891e-01, 4.02843207e-02, -5.35067645e-01], 
+                    [ 0.00000000e+00, 0.00000000e+00, 0.00000000e+00, 1.00000000e+00]
+                ]),
+                np.array([
+                    [-6.43027089e+02, -6.80713597e+02, -2.16415309e+01, -6.98239277e+02], 
+                    [-8.32595991e+00, -3.55999922e+02, -6.52047284e+02, -5.67401993e+02], 
+                    [-8.09745037e-03, -9.99188356e-01, -3.94595969e-02, -1.01836906e+00], 
+                    [ 0.00000000e+00, 0.00000000e+00, 0.00000000e+00, 1.00000000e+00]
+                ]),
+                np.array([
+                    [-9.49209822e+02, 7.38663920e+02, 4.26213282e+01, -4.97745049e+02], 
+                    [-3.70047172e+02, -8.19211684e+01, -1.00201050e+03, -4.49684719e+02], 
+                    [-9.47606632e-01, -3.19424713e-01, 3.08614988e-03, -4.33192210e-01], 
+                    [ 0.00000000e+00, 0.00000000e+00, 0.00000000e+00, 1.00000000e+00]
+                ]),
+                np.array([
+                    [ 2.28671785e+02, -1.17530448e+03, -4.80341886e+01, -2.18502572e+02], 
+                    [ 3.56575704e+02, -9.76423127e+01, -1.00009447e+03, -4.69595942e+02], 
+                    [ 9.24213055e-01, -3.81863834e-01, -3.20023987e-03, -4.63930291e-01], 
+                    [ 0.00000000e+00, 0.00000000e+00, 0.00000000e+00, 1.00000000e+00]
+                ])
+            ])
+            lidar2img_batched = np.stack([lidar2img_stacked])
+
+
             # img_metasの作成
             img_metas = [DataContainer([[{
                 'scene_token': '0',  # ダミーのscene_token
                 'can_bus': can_bus,
-            }]])]
+                'img_shape': [(736, 1280, 3) for _ in range(6)],
+                'lidar2img': lidar2img_batched,
+            }]], cpu_only=True)]
 
             # driving_commandを[1, 1, 1, 3]の形状に変形
             ego_fut_cmd_tensor = torch.tensor(
@@ -392,7 +438,7 @@ class VADServicer(vad_service_pb2_grpc.VADServiceServicer):
                 'ego_lcf_feat': [ego_lcf_feat_container],
                 'gt_bboxes_3d': None,
                 'gt_labels_3d': None,
-                'prev_bev': None,
+                # 'prev_bev': None,
                 'points': None,
                 'fut_valid_flag': False,  # 追加
                 'ego_his_trajs': [ego_his_trajs],
@@ -402,24 +448,6 @@ class VADServicer(vad_service_pb2_grpc.VADServiceServicer):
                 'map_gt_bboxes_3d': None,
                 'gt_attr_labels': None
             }
-
-            def deep_compare_img_metas(metas1, metas2):
-                print("img_metas comparison:")
-                print(f"Type of metas1: {type(metas1)}")
-                print(f"Type of metas2: {type(metas2)}")
-                
-                print("\nFirst item types:")
-                print(f"metas1[0] type: {type(metas1[0])}")
-                print(f"metas2[0] type: {type(metas2[0])}")
-                
-                if isinstance(metas1[0], DataContainer) and isinstance(metas2[0], DataContainer):
-                    print("\nDataContainer details:")
-                    print(f"metas1[0].data type: {type(metas1[0].data)}")
-                    print(f"metas2[0].data type: {type(metas2[0].data)}")
-                    
-                    print("\nInspecting data structure:")
-                    print(f"metas1[0].data: {metas1[0].data}")
-                    print(f"metas2[0].data: {metas2[0].data}")
 
             # build the dataloader
             cfg = self.vad_wrapper.cfg
@@ -455,13 +483,10 @@ class VADServicer(vad_service_pb2_grpc.VADServiceServicer):
                     break
                 with torch.no_grad():
                     output = self.vad_wrapper.model(return_loss=False, rescale=True, **data)
-                    _output = self.vad_wrapper.model(return_loss=False, rescale=True, **input_data)
-                deep_compare_img_metas(data['img_metas'], input_data['img_metas'])
-                import pdb;pdb.set_trace()
             # Process with VAD model
-            # output = self.vad_model(return_loss=False, rescale=True, **input_data)
+            output = self.vad_model(return_loss=False, rescale=True, **input_data)
             with torch.no_grad():
-                import pdb;pdb.set_trace()
+                # import pdb;pdb.set_trace()
                 output = self.vad_wrapper.model(return_loss=False, rescale=True, **input_data)
             # ego_fut_predsを取得 (shape: [3, 6, 2])
             ego_fut_preds = output[0]['pts_bbox']['ego_fut_preds']
