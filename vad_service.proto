@@ -1,26 +1,3 @@
-// syntax = "proto3";
-
-// package vad;
-
-// service VADService {
-//   rpc ProcessImage (ImageRequest) returns (TrajectoryResponse) {}
-// }
-
-// message ImageRequest {
-//   bytes image_data = 1;
-//   string encoding = 2;  // 画像のエンコーディング形式
-// }
-
-// message TrajectoryResponse {
-//   repeated TrajectoryPoint trajectory = 1;
-// }
-
-// message TrajectoryPoint {
-//   float x = 1;
-//   float y = 2;
-//   float z = 3;
-// }
-
 syntax = "proto3";
 
 package vad;
