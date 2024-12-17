@@ -51,13 +51,21 @@ class VADClient(Node):
             depth=10,
         )
         
-        # Subscribers
-        self.create_subscription(
-            CompressedImage,
-            '/sensing/camera/camera0/image_rect_color/compressed',
-            self.image_callback,
-            image_qos_profile
-        )
+        # カメラのSubscribers
+        self.camera_topics = [
+            f'/sensing/camera/camera{i}/image_rect_color/compressed' 
+            for i in range(6)
+        ]
+
+        # 各カメラ画像のSubscriberを作成
+        self.latest_images = {topic: None for topic in self.camera_topics}
+        for topic in self.camera_topics:
+            self.create_subscription(
+                CompressedImage,
+                topic,
+                lambda msg, topic=topic: self.image_callback(msg, topic),
+                image_qos_profile
+            )
         self.create_subscription(
             Odometry,
             '~/input/ego', # /localization/kinematic_state
@@ -101,11 +109,13 @@ class VADClient(Node):
         
         # Dummy publishers (使用時のみ初期化)
         if self.dummy_mode:
-            self.dummy_image_pub = self.create_publisher(
-                CompressedImage,
-                '/sensing/camera/camera0/image_rect_color/compressed',
-                qos_profile
-            )
+            self.dummy_image_pubs = {}
+            for topic in self.camera_topics:
+                self.dummy_image_pubs[topic] = self.create_publisher(
+                    CompressedImage,
+                    topic,
+                    image_qos_profile
+                )
             self.dummy_odom_pub = self.create_publisher(
                 Odometry,
                 '~/input/ego',
@@ -147,17 +157,18 @@ class VADClient(Node):
         current_time = self.get_clock().now()
         
         # ダミー画像の生成とパブリッシュ
-        dummy_image = CompressedImage()
-        dummy_image.header.stamp = current_time.to_msg()
-        dummy_image.header.frame_id = "camera"
-        dummy_image.format = "jpeg"
-        
-        # 100x100の黒い画像を作成
-        img = np.zeros((100, 100, 3), dtype=np.uint8)
-        _, img_encoded = cv2.imencode('.jpg', img)
-        dummy_image.data = img_encoded.tobytes()
-        
-        self.dummy_image_pub.publish(dummy_image)
+        for topic, pub in self.dummy_image_pubs.items():
+            dummy_image = CompressedImage()
+            dummy_image.header.stamp = current_time.to_msg()
+            dummy_image.header.frame_id = "camera"
+            dummy_image.format = "jpeg"
+            
+            # 100x100の黒い画像を作成
+            img = np.zeros((100, 100, 3), dtype=np.uint8)
+            _, img_encoded = cv2.imencode('.jpg', img)
+            dummy_image.data = img_encoded.tobytes()
+            
+            pub.publish(dummy_image)
         
         # ダミーOdometryの生成とパブリッシュ
         dummy_odom = Odometry()
@@ -204,9 +215,10 @@ class VADClient(Node):
         dummy_steering.steering_tire_angle = 0.0
         self.dummy_steering_pub.publish(dummy_steering)
         
-    def image_callback(self, msg: CompressedImage):
-        self.get_logger().debug('Received image')
-        self.latest_image = msg.data
+    def image_callback(self, msg: CompressedImage, topic: str):
+        """カメラ画像のコールバック"""
+        self.get_logger().debug(f'Received image from {topic}')
+        self.latest_images[topic] = msg.data
         self.try_process()
         
     def ego_callback(self, msg: Odometry):
@@ -308,14 +320,20 @@ class VADClient(Node):
         return proto_odom
         
     def try_process(self):
-        if self.latest_image is None or not self.ego_history:
-            return
+        """全てのカメラ画像が揃っているか確認して処理を実行"""
+        if any(img is None for img in self.latest_images.values()):
+            return  # 全てのカメラ画像が揃っていない
+
+        if not self.ego_history:
+            return  # オドメトリデータがない
             
         # bytes型に変換
-        if isinstance(self.latest_image, array.array):
-            image_data = bytes(self.latest_image)
+        # TODO(Shin-kyoto): send 6 images
+        image_name = "/sensing/camera/camera0/image_rect_color/compressed"
+        if isinstance(self.latest_images[image_name], array.array):
+            image_data = bytes(self.latest_images[image_name])
         else:
-            image_data = self.latest_image
+            image_data = self.latest_images[image_name]
 
         request = vad_service_pb2.VADRequest(
             image_data=image_data,
