@@ -11,6 +11,8 @@ from pathlib import Path
 import uuid
 from typing import Dict, Any
 
+from mmcv.parallel.data_container import DataContainer
+
 class VehicleParams:
    def __init__(self, vehicle_info_path: str = None):
        self.vehicle_info_path = vehicle_info_path
@@ -55,6 +57,10 @@ class VADDummy:
         return self.forward_test(**kwargs)
 
     def forward_test(self, **kwargs):
+
+        if not isinstance(kwargs["img"][0], DataContainer):
+            raise ValueError("Input image should be wrapped in DataContainer")
+           
         # ダミーの予測結果を生成
         ego_fut_preds = torch.zeros(3, 6, 2)  # [3フレーム, 6パターン, (x, y)]
         
@@ -120,6 +126,13 @@ class VADServicer(vad_service_pb2_grpc.VADServiceServicer):
                 image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
                 camera_images[camera_image.camera_id] = image
 
+            print("Processing images")
+            img_tensor = torch.stack([
+                torch.from_numpy(img).permute(2, 0, 1).float() 
+                for img in camera_images.values()
+            ]).to(self.device)
+            img_container = DataContainer(img_tensor, stack=True, padding_value=0)
+
             # img_metasの作成
             img_metas = [[{
                 'scene_token': '0',  # ダミーのscene_token
@@ -157,7 +170,7 @@ class VADServicer(vad_service_pb2_grpc.VADServiceServicer):
 
             # モデル入力の準備
             input_data = {
-                'img': [[torch.from_numpy(list(camera_images.values())[0]).permute(2, 0, 1).float().to("cuda:0")]],
+                'img': [img_container],
                 'img_metas': img_metas,
                 'ego_fut_cmd': [[torch.tensor([0, 0, 1], dtype=torch.float32).to(self.device)]],
                 'ego_lcf_feat': [[ego_lcf_feat.to(self.device)]],
@@ -187,8 +200,11 @@ class VADServicer(vad_service_pb2_grpc.VADServiceServicer):
                 response.objects.append(predicted_object)
             print("send response")
             return response
-            
+
         except Exception as e:
+            print(f"Error in ProcessData: {str(e)}")
+            import traceback
+            traceback.print_exc()
             context.set_code(grpc.StatusCode.INTERNAL)
             context.set_details(str(e))
             raise
