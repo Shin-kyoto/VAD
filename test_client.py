@@ -44,13 +44,19 @@ class VADClient(Node):
             history=QoSHistoryPolicy.KEEP_LAST,
             depth=10,
         )
+
+        image_qos_profile = QoSProfile(
+            reliability=QoSReliabilityPolicy.BEST_EFFORT,
+            history=QoSHistoryPolicy.KEEP_LAST,
+            depth=10,
+        )
         
         # Subscribers
         self.create_subscription(
             CompressedImage,
             '/sensing/camera/camera0/image_rect_color/compressed',
             self.image_callback,
-            qos_profile
+            image_qos_profile
         )
         self.create_subscription(
             Odometry,
