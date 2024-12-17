@@ -2,6 +2,7 @@
 test/
 ckpts/
 *venv
+private
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
