@@ -299,7 +299,7 @@ class VAD(MVXTwoStageDetector):
             gt_bboxes_3d=gt_bboxes_3d,
             gt_labels_3d=gt_labels_3d,
             ego_his_trajs=ego_his_trajs[0],
-            ego_fut_trajs=ego_fut_trajs[0],
+            ego_fut_trajs=None,
             ego_fut_cmd=ego_fut_cmd[0],
             ego_lcf_feat=ego_lcf_feat[0],
             gt_attr_labels=gt_attr_labels,
@@ -349,7 +349,7 @@ class VAD(MVXTwoStageDetector):
         )
         for result_dict, pts_bbox in zip(bbox_list, bbox_pts):
             result_dict['pts_bbox'] = pts_bbox
-            result_dict['metric_results'] = metric_dict
+            # result_dict['metric_results'] = metric_dict
 
         return new_prev_bev, bbox_list
 
@@ -378,61 +378,68 @@ class VAD(MVXTwoStageDetector):
 
         outs = self.pts_bbox_head(x, img_metas, prev_bev=prev_bev,
                                   ego_his_trajs=ego_his_trajs, ego_lcf_feat=ego_lcf_feat)
-        bbox_list = self.pts_bbox_head.get_bboxes(outs, img_metas, rescale=rescale)
+        # bbox_list = self.pts_bbox_head.get_bboxes(outs, img_metas, rescale=rescale)
+
+        # bbox_results = []
+        # for i, (bboxes, scores, labels, trajs, map_bboxes, \
+        #         map_scores, map_labels, map_pts) in enumerate(bbox_list):
+        #     bbox_result = bbox3d2result(bboxes, scores, labels)
+        #     bbox_result['trajs_3d'] = trajs.cpu()
+        #     map_bbox_result = self.map_pred2result(map_bboxes, map_scores, map_labels, map_pts)
+        #     bbox_result.update(map_bbox_result)
+        #     bbox_result['ego_fut_preds'] = outs['ego_fut_preds'][i].cpu()
+        #     bbox_result['ego_fut_cmd'] = ego_fut_cmd.cpu()
+        #     bbox_results.append(bbox_result)
+
+        # assert len(bbox_results) == 1, 'only support batch_size=1 now'
+        # score_threshold = 0.6
+        # with torch.no_grad():
+        #     c_bbox_results = copy.deepcopy(bbox_results)
+
+        #     bbox_result = c_bbox_results[0]
+        #     gt_bbox = gt_bboxes_3d[0][0]
+        #     gt_label = gt_labels_3d[0][0].to('cpu')
+        #     gt_attr_label = gt_attr_labels[0][0].to('cpu')
+        #     fut_valid_flag = bool(fut_valid_flag[0][0])
+        #     # filter pred bbox by score_threshold
+        #     mask = bbox_result['scores_3d'] > score_threshold
+        #     bbox_result['boxes_3d'] = bbox_result['boxes_3d'][mask]
+        #     bbox_result['scores_3d'] = bbox_result['scores_3d'][mask]
+        #     bbox_result['labels_3d'] = bbox_result['labels_3d'][mask]
+        #     bbox_result['trajs_3d'] = bbox_result['trajs_3d'][mask]
+
+        #     matched_bbox_result = self.assign_pred_to_gt_vip3d(
+        #         bbox_result, gt_bbox, gt_label)
+
+        #     metric_dict = self.compute_motion_metric_vip3d(
+        #         gt_bbox, gt_label, gt_attr_label, bbox_result,
+        #         matched_bbox_result, mapped_class_names)
+
+        #     # ego planning metric
+        #     assert ego_fut_trajs.shape[0] == 1, 'only support batch_size=1 for testing'
+        #     ego_fut_preds = bbox_result['ego_fut_preds']
+        #     ego_fut_trajs = ego_fut_trajs[0, 0]
+        #     ego_fut_cmd = ego_fut_cmd[0, 0, 0]
+        #     ego_fut_cmd_idx = torch.nonzero(ego_fut_cmd)[0, 0]
+        #     ego_fut_pred = ego_fut_preds[ego_fut_cmd_idx]
+        #     ego_fut_pred = ego_fut_pred.cumsum(dim=-2)
+        #     ego_fut_trajs = ego_fut_trajs.cumsum(dim=-2)
+
+        #     metric_dict_planner_stp3 = self.compute_planner_metric_stp3(
+        #         pred_ego_fut_trajs = ego_fut_pred[None],
+        #         gt_ego_fut_trajs = ego_fut_trajs[None],
+        #         gt_agent_boxes = gt_bbox,
+        #         gt_agent_feats = gt_attr_label.unsqueeze(0),
+        #         fut_valid_flag = fut_valid_flag
+        #     )
+        #     metric_dict.update(metric_dict_planner_stp3)
 
         bbox_results = []
-        for i, (bboxes, scores, labels, trajs, map_bboxes, \
-                map_scores, map_labels, map_pts) in enumerate(bbox_list):
-            bbox_result = bbox3d2result(bboxes, scores, labels)
-            bbox_result['trajs_3d'] = trajs.cpu()
-            map_bbox_result = self.map_pred2result(map_bboxes, map_scores, map_labels, map_pts)
-            bbox_result.update(map_bbox_result)
+        for i in range(len(outs['ego_fut_preds'])):
+            bbox_result = {}
             bbox_result['ego_fut_preds'] = outs['ego_fut_preds'][i].cpu()
-            bbox_result['ego_fut_cmd'] = ego_fut_cmd.cpu()
             bbox_results.append(bbox_result)
-
-        assert len(bbox_results) == 1, 'only support batch_size=1 now'
-        score_threshold = 0.6
-        with torch.no_grad():
-            c_bbox_results = copy.deepcopy(bbox_results)
-
-            bbox_result = c_bbox_results[0]
-            gt_bbox = gt_bboxes_3d[0][0]
-            gt_label = gt_labels_3d[0][0].to('cpu')
-            gt_attr_label = gt_attr_labels[0][0].to('cpu')
-            fut_valid_flag = bool(fut_valid_flag[0][0])
-            # filter pred bbox by score_threshold
-            mask = bbox_result['scores_3d'] > score_threshold
-            bbox_result['boxes_3d'] = bbox_result['boxes_3d'][mask]
-            bbox_result['scores_3d'] = bbox_result['scores_3d'][mask]
-            bbox_result['labels_3d'] = bbox_result['labels_3d'][mask]
-            bbox_result['trajs_3d'] = bbox_result['trajs_3d'][mask]
-
-            matched_bbox_result = self.assign_pred_to_gt_vip3d(
-                bbox_result, gt_bbox, gt_label)
-
-            metric_dict = self.compute_motion_metric_vip3d(
-                gt_bbox, gt_label, gt_attr_label, bbox_result,
-                matched_bbox_result, mapped_class_names)
-
-            # ego planning metric
-            assert ego_fut_trajs.shape[0] == 1, 'only support batch_size=1 for testing'
-            ego_fut_preds = bbox_result['ego_fut_preds']
-            ego_fut_trajs = ego_fut_trajs[0, 0]
-            ego_fut_cmd = ego_fut_cmd[0, 0, 0]
-            ego_fut_cmd_idx = torch.nonzero(ego_fut_cmd)[0, 0]
-            ego_fut_pred = ego_fut_preds[ego_fut_cmd_idx]
-            ego_fut_pred = ego_fut_pred.cumsum(dim=-2)
-            ego_fut_trajs = ego_fut_trajs.cumsum(dim=-2)
-
-            metric_dict_planner_stp3 = self.compute_planner_metric_stp3(
-                pred_ego_fut_trajs = ego_fut_pred[None],
-                gt_ego_fut_trajs = ego_fut_trajs[None],
-                gt_agent_boxes = gt_bbox,
-                gt_agent_feats = gt_attr_label.unsqueeze(0),
-                fut_valid_flag = fut_valid_flag
-            )
-            metric_dict.update(metric_dict_planner_stp3)
+        metric_dict = None
 
         return outs['bev_embed'], bbox_results, metric_dict
 
