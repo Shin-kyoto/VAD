@@ -13,6 +13,35 @@ from typing import Dict, Any
 
 from mmcv.parallel.data_container import DataContainer
 
+import sys
+sys.path.append('')
+import numpy as np
+import argparse
+import mmcv
+import os
+import copy
+import torch
+torch.multiprocessing.set_sharing_strategy('file_system')
+import warnings
+from mmcv import Config, DictAction
+from mmcv.cnn import fuse_conv_bn
+from mmcv.parallel import MMDataParallel, MMDistributedDataParallel
+from mmcv.runner import (get_dist_info, init_dist, load_checkpoint,
+                         wrap_fp16_model)
+
+from mmdet3d.apis import single_gpu_test
+from mmdet3d.datasets import build_dataset
+from projects.mmdet3d_plugin.datasets.builder import build_dataloader
+from mmdet3d.models import build_model
+from mmdet.apis import set_random_seed
+# from projects.mmdet3d_plugin.bevformer.apis.test import custom_multi_gpu_test
+from projects.mmdet3d_plugin.VAD.apis.test import custom_multi_gpu_test
+from mmdet.datasets import replace_ImageToTensor
+import time
+import os.path as osp
+import json
+
+
 class VehicleParams:
    def __init__(self, vehicle_info_path: str = None):
        self.vehicle_info_path = vehicle_info_path
@@ -43,6 +72,73 @@ class VehicleParams:
    @property
    def max_steer_angle(self) -> float:
        return self.params['max_steer_angle']
+
+class VADWrapper:
+    def __init__(self, vad_config_path = "/workspace/VAD/projects/configs/VAD/VAD_base_e2e.py", checkpoint_path = "/workspace/VAD/ckpts/VAD_base.pth"):
+        cfg = Config.fromfile(vad_config_path)
+        # import modules from string list.
+        if cfg.get('custom_imports', None):
+            from mmcv.utils import import_modules_from_strings
+            import_modules_from_strings(**cfg['custom_imports'])
+
+        # import modules from plguin/xx, registry will be updated
+        if hasattr(cfg, 'plugin'):
+            if cfg.plugin:
+                import importlib
+                if hasattr(cfg, 'plugin_dir'):
+                    plugin_dir = cfg.plugin_dir
+                    _module_dir = os.path.dirname(plugin_dir)
+                    _module_dir = _module_dir.split('/')
+                    _module_path = _module_dir[0]
+
+                    for m in _module_dir[1:]:
+                        _module_path = _module_path + '.' + m
+                    print(_module_path)
+                    plg_lib = importlib.import_module(_module_path)
+                # else:
+                #     # import dir is the dirpath for the config file
+                #     _module_dir = os.path.dirname(args.config)
+                #     _module_dir = _module_dir.split('/')
+                #     _module_path = _module_dir[0]
+                #     for m in _module_dir[1:]:
+                #         _module_path = _module_path + '.' + m
+                #     print(_module_path)
+                #     plg_lib = importlib.import_module(_module_path)
+
+        # set cudnn_benchmark
+        if cfg.get('cudnn_benchmark', False):
+            torch.backends.cudnn.benchmark = True
+
+        cfg.model.pretrained = None
+        # in case the test dataset is concatenated
+        samples_per_gpu = 1
+        if isinstance(cfg.data.test, dict):
+            cfg.data.test.test_mode = True
+            samples_per_gpu = cfg.data.test.pop('samples_per_gpu', 1)
+            if samples_per_gpu > 1:
+                # Replace 'ImageToTensor' to 'DefaultFormatBundle'
+                cfg.data.test.pipeline = replace_ImageToTensor(
+                    cfg.data.test.pipeline)
+        elif isinstance(cfg.data.test, list):
+            for ds_cfg in cfg.data.test:
+                ds_cfg.test_mode = True
+            samples_per_gpu = max(
+                [ds_cfg.pop('samples_per_gpu', 1) for ds_cfg in cfg.data.test])
+            if samples_per_gpu > 1:
+                for ds_cfg in cfg.data.test:
+                    ds_cfg.pipeline = replace_ImageToTensor(ds_cfg.pipeline)
+
+
+        # build the model and load checkpoint
+        cfg.model.train_cfg = None
+        model = build_model(cfg.model, test_cfg=cfg.get('test_cfg'))
+        checkpoint = load_checkpoint(model, checkpoint_path, map_location='cpu')
+        model.CLASSES = checkpoint['meta']['CLASSES']
+        model.PALETTE = checkpoint['meta']['PALETTE']
+
+        self.model = MMDataParallel(model, device_ids=[0])
+
+
 
 class VADDummy:
     def __init__(self):
@@ -124,6 +220,7 @@ class VADDummy:
 class VADServicer(vad_service_pb2_grpc.VADServiceServicer):
     def __init__(self, vehicle_info_path: Path, device: str = "cuda:0"):
         self.vad_model = VADDummy()
+        self.vad_wrapper = VADWrapper()
         self.vehicle_params = VehicleParams(vehicle_info_path)
         self.device = device
 
@@ -304,6 +401,8 @@ class VADServicer(vad_service_pb2_grpc.VADServiceServicer):
 
             # Process with VAD model
             output = self.vad_model(return_loss=False, rescale=True, **input_data)
+            # with torch.no_grad():
+            #     output = self.vad_wrapper.model(return_loss=False, rescale=True, **input_data)
             # ego_fut_predsを取得 (shape: [3, 6, 2])
             ego_fut_preds = output[0]['pts_bbox']['ego_fut_preds']
 
