@@ -277,7 +277,7 @@ class VADServicer(vad_service_pb2_grpc.VADServiceServicer):
                 for img in resized_images
             ]).to(self.device)
             img_tensor = img_tensor.view(1, 6, 3, 736, 1280)
-            img_container = DataContainer(img_tensor, stack=True, padding_value=0)
+            img_container = DataContainer([img_tensor], stack=True, padding_value=0)
 
             # Odometryから速度と角速度を取得
             latest_odom = request.ego_history[-1]
@@ -392,7 +392,6 @@ class VADServicer(vad_service_pb2_grpc.VADServiceServicer):
                     [ 0.00000000e+00, 0.00000000e+00, 0.00000000e+00, 1.00000000e+00]
                 ])
             ])
-            lidar2img_batched = np.stack([lidar2img_stacked])
 
 
             # img_metasの作成
@@ -400,7 +399,7 @@ class VADServicer(vad_service_pb2_grpc.VADServiceServicer):
                 'scene_token': '0',  # ダミーのscene_token
                 'can_bus': can_bus,
                 'img_shape': [(736, 1280, 3) for _ in range(6)],
-                'lidar2img': lidar2img_batched,
+                'lidar2img': lidar2img_stacked,
             }]], cpu_only=True)]
 
             # driving_commandを[1, 1, 1, 3]の形状に変形
