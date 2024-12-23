@@ -448,41 +448,6 @@ class VADServicer(vad_service_pb2_grpc.VADServiceServicer):
                 'gt_attr_labels': None
             }
 
-            # build the dataloader
-            cfg = self.vad_wrapper.cfg
-            samples_per_gpu = 1
-            if isinstance(cfg.data.test, dict):
-                cfg.data.test.test_mode = True
-                samples_per_gpu = cfg.data.test.pop('samples_per_gpu', 1)
-                if samples_per_gpu > 1:
-                    # Replace 'ImageToTensor' to 'DefaultFormatBundle'
-                    cfg.data.test.pipeline = replace_ImageToTensor(
-                        cfg.data.test.pipeline)
-            elif isinstance(cfg.data.test, list):
-                for ds_cfg in cfg.data.test:
-                    ds_cfg.test_mode = True
-                samples_per_gpu = max(
-                    [ds_cfg.pop('samples_per_gpu', 1) for ds_cfg in cfg.data.test])
-                if samples_per_gpu > 1:
-                    for ds_cfg in cfg.data.test:
-                        ds_cfg.pipeline = replace_ImageToTensor(ds_cfg.pipeline)
-            dataset = build_dataset(cfg.data.test)
-            distributed = False
-            data_loader = build_dataloader(
-                dataset,
-                samples_per_gpu=samples_per_gpu,
-                workers_per_gpu=cfg.data.workers_per_gpu,
-                dist=distributed,
-                shuffle=False,
-                nonshuffler_sampler=cfg.data.nonshuffler_sampler,
-            )
-
-            for i, data in enumerate(data_loader):
-                if i > 1:
-                    break
-                with torch.no_grad():
-                    output = self.vad_wrapper.model(return_loss=False, rescale=True, **data)
-
             with torch.no_grad():
                 output = self.vad_wrapper.model(return_loss=False, rescale=True, **input_data)
             # ego_fut_predsを取得 (shape: [3, 6, 2])
