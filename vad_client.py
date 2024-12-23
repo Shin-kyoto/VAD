@@ -62,6 +62,7 @@ class VADClient(Node):
             f'/sensing/camera/camera{i}/image_rect_color/compressed' 
             for i in range(6)
         ]
+        self.reset_topic = '/sensing/camera/camera0/image_rect_color/compressed'
 
         self.tf_subscription = self.create_subscription(
             TFMessage, 
@@ -239,6 +240,10 @@ class VADClient(Node):
     def image_callback(self, msg: CompressedImage, topic: str):
         """カメラ画像のコールバック"""
         self.get_logger().debug(f'Received image from {topic}')
+
+        if topic == self.reset_topic:
+            self.latest_images = {topic: None for topic in self.camera_topics}
+
         self.latest_images[topic] = msg
         self.try_process()
         
@@ -264,7 +269,6 @@ class VADClient(Node):
             self.ego_history.pop(0)
 
         self.past_poses.append(current_point)
-        self.try_process()
 
     def tf_callback(self, msg):
         """
@@ -537,7 +541,6 @@ class VADClient(Node):
         #     )
         # except Exception as e:
         #     self.get_logger().error(f'座標変換エラー: {e}')
-        
         for proto_obj in response.objects:
             obj = PredictedObject()
 
