@@ -225,34 +225,36 @@ class VADServicer(vad_service_pb2_grpc.VADServiceServicer):
         self.vehicle_params = VehicleParams(vehicle_info_path)
         self.device = device
 
-    def create_predicted_object_from_trajectory(self, trajectory: torch.Tensor, confidence: float, timestamp_sec: int, timestamp_nanosec: int):
-        """単一の軌道をPredictedObjectに変換"""
+    def create_predicted_object_with_trajectories(self, trajectories: torch.Tensor, confidences: np.ndarray, current_pos: list, timestamp_sec: int, timestamp_nanosec: int):
+        """複数の軌道を1つのPredictedObjectにまとめる"""
         obj = vad_service_pb2.PredictedObject(
             uuid=str(uuid.uuid4()),
             existence_probability=0.9
         )
         
-        # 初期位置を設定
+        # 現在位置を初期位置として設定
         kinematics = obj.kinematics
-        kinematics.initial_pose_with_covariance.pose.position.x = 0.0
-        kinematics.initial_pose_with_covariance.pose.position.y = 0.0
+        kinematics.initial_pose_with_covariance.pose.position.x = float(current_pos[0])
+        kinematics.initial_pose_with_covariance.pose.position.y = float(current_pos[1])
         kinematics.initial_pose_with_covariance.pose.position.z = 0.0
         kinematics.initial_pose_with_covariance.pose.orientation.w = 1.0
         kinematics.initial_pose_with_covariance.covariance.extend([0.0] * 36)
         
-        # 予測軌道を設定
-        path = kinematics.predicted_paths.add()
-        for waypoint in trajectory:
-            pose = path.path.add()
-            pose.position.x = float(waypoint[0])
-            pose.position.y = float(waypoint[1])
-            pose.position.z = 0.0
-            pose.orientation.w = 1.0
+        # 各軌道を予測パスとして追加
+        for trajectory, confidence in zip(trajectories, confidences):
+            path = kinematics.predicted_paths.add()
+            for waypoint in trajectory:
+                pose = path.path.add()
+                # 現在位置からの相対位置として設定
+                pose.position.x = float(waypoint[0]) + float(current_pos[0])
+                pose.position.y = float(waypoint[1]) + float(current_pos[1])
+                pose.position.z = 0.0
+                pose.orientation.w = 1.0
             
-        # 画像のタイムスタンプを使用
-        path.time_step.sec = timestamp_sec
-        path.time_step.nanosec = timestamp_nanosec
-        path.confidence = float(confidence)
+            # タイムスタンプと信頼度を設定
+            path.time_step.sec = timestamp_sec
+            path.time_step.nanosec = timestamp_nanosec
+            path.confidence = float(confidence)
         
         return obj
 
@@ -454,24 +456,21 @@ class VADServicer(vad_service_pb2_grpc.VADServiceServicer):
             ego_fut_preds = output[0]['pts_bbox']['ego_fut_preds']
 
             predcicted_objects = []
-            # TODO(Shin-kyoto): use predicted score for trajectory
+
             confidences = np.linspace(1.0, 0.5, ego_fut_preds.shape[1])  # 6つの予測に対する信頼度を設定
-            for traj_idx in range(ego_fut_preds.shape[1]):
-                trajectory = ego_fut_preds[:, traj_idx, :]  # (3, 2)の軌道データ
-                predicted_object = self.create_predicted_object_from_trajectory(
-                        trajectory=trajectory,
-                        confidence=confidences[traj_idx],
-                        timestamp_sec=timestamp_sec,
-                        timestamp_nanosec=timestamp_nanosec,
-                    )
-                predcicted_objects.append(predicted_object)
-            
+            predicted_object = self.create_predicted_object_with_trajectories(
+                trajectories=ego_fut_preds.permute(1, 0, 2),  # (6, 3, 2)の形状に変換
+                confidences=confidences,
+                current_pos=current_pos,
+                timestamp_sec=timestamp_sec,
+                timestamp_nanosec=timestamp_nanosec,
+            )
+
             # Create response
             response = vad_service_pb2.VADResponse()
             if len(request.ego_history) > 0:
                 response.header.CopyFrom(request.ego_history[-1].header)
-            for predicted_object in predcicted_objects:
-                response.objects.append(predicted_object)
+            response.objects.append(predicted_object)
             print("send response")
             return response
 
