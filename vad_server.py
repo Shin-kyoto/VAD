@@ -225,7 +225,47 @@ class VADServicer(vad_service_pb2_grpc.VADServiceServicer):
         self.vehicle_params = VehicleParams(vehicle_info_path)
         self.device = device
 
-    def create_predicted_object_with_trajectories(self, trajectories: torch.Tensor, confidences: np.ndarray, current_pos: list, timestamp_sec: int, timestamp_nanosec: int):
+    def create_predicted_object_from_single_trajectory(self, trajectory: torch.Tensor, current_pos: list, timestamp_sec: int, timestamp_nanosec: int):
+        """単一の軌道からPredictedObjectを作成する
+        Args:
+            trajectory: shape [6, 2] のtensor。6つの予測点のx, y座標
+            current_pos: 現在位置 [x, y]
+            timestamp_sec: タイムスタンプ（秒）
+            timestamp_nanosec: タイムスタンプ（ナノ秒）
+        """
+        obj = vad_service_pb2.PredictedObject(
+            uuid=str(uuid.uuid4()),
+            existence_probability=0.9
+        )
+        
+        # 現在位置を初期位置として設定
+        kinematics = obj.kinematics
+        kinematics.initial_pose_with_covariance.pose.position.x = float(current_pos[0])
+        kinematics.initial_pose_with_covariance.pose.position.y = float(current_pos[1])
+        kinematics.initial_pose_with_covariance.pose.position.z = 0.0
+        kinematics.initial_pose_with_covariance.pose.orientation.w = 1.0
+        kinematics.initial_pose_with_covariance.covariance.extend([0.0] * 36)
+        
+        # 単一の予測パスを追加
+        path = kinematics.predicted_paths.add()
+        
+        # 6ステップの予測位置を追加
+        for waypoint in trajectory:
+            pose = path.path.add()
+            # 現在位置からの相対位置として設定
+            pose.position.x = float(waypoint[0]) + float(current_pos[0])
+            pose.position.y = float(waypoint[1]) + float(current_pos[1])
+            pose.position.z = 0.0
+            pose.orientation.w = 1.0
+        
+        # タイムスタンプと信頼度を設定（信頼度は1.0固定）
+        path.time_step.sec = timestamp_sec
+        path.time_step.nanosec = timestamp_nanosec
+        path.confidence = 1.0
+        
+        return obj
+
+    def create_predicted_object_with_trajectories(self, trajectories: torch.Tensor, ego_fut_cmd_idx: int, current_pos: list, timestamp_sec: int, timestamp_nanosec: int):
         """複数の軌道を1つのPredictedObjectにまとめる"""
         obj = vad_service_pb2.PredictedObject(
             uuid=str(uuid.uuid4()),
@@ -240,23 +280,47 @@ class VADServicer(vad_service_pb2_grpc.VADServiceServicer):
         kinematics.initial_pose_with_covariance.pose.orientation.w = 1.0
         kinematics.initial_pose_with_covariance.covariance.extend([0.0] * 36)
         
-        # 各軌道を予測パスとして追加
-        for trajectory, confidence in zip(trajectories, confidences):
+        # 0.6秒分のタイムステップを生成 (0.1秒間隔で6ステップ)
+        num_steps = 6
+        dt = 0.1  # 0.1秒間隔
+        
+        # 3つの異なる軌道を生成
+        for traj_idx in range(3):
             path = kinematics.predicted_paths.add()
-            for waypoint in trajectory:
+            
+            # 基本の軌道を取得
+            base_trajectory = trajectories[traj_idx]
+            
+            # 0.6秒分の予測を生成
+            for t in range(num_steps):
                 pose = path.path.add()
+                
+                # 時間ステップに基づいて位置を計算
+                t_norm = t / (num_steps - 1)  # 0から1の範囲に正規化
+                if t < len(base_trajectory):
+                    # 元の予測点を使用
+                    dx = float(base_trajectory[t][0])
+                    dy = float(base_trajectory[t][1])
+                else:
+                    # 最後の予測点までの軌道を線形補間
+                    last_idx = len(base_trajectory) - 1
+                    dx = float(base_trajectory[last_idx][0])
+                    dy = float(base_trajectory[last_idx][1])
+                
                 # 現在位置からの相対位置として設定
-                pose.position.x = float(waypoint[0]) + float(current_pos[0])
-                pose.position.y = float(waypoint[1]) + float(current_pos[1])
+                pose.position.x = dx + float(current_pos[0])
+                pose.position.y = dy + float(current_pos[1])
                 pose.position.z = 0.0
                 pose.orientation.w = 1.0
             
             # タイムスタンプと信頼度を設定
             path.time_step.sec = timestamp_sec
             path.time_step.nanosec = timestamp_nanosec
-            path.confidence = float(confidence)
+            # ego_fut_cmdに対応するtrajectoryは信頼度1.0、それ以外は0.3
+            path.confidence = 1.0 if traj_idx == ego_fut_cmd_idx else 0.3
         
         return obj
+
 
     def ProcessData(self, request, context):
         try:
@@ -408,7 +472,7 @@ class VADServicer(vad_service_pb2_grpc.VADServiceServicer):
             ego_fut_cmd_tensor = torch.tensor(
                 request.driving_command, 
                 dtype=torch.float32
-            ).view(1, 1, 1, 3).to(self.device)
+            ).view(1, 1, 1, 1, 3).to(self.device)
             ego_fut_cmd_container = DataContainer(ego_fut_cmd_tensor, stack=True, padding_value=0)
 
             latest_odom = request.ego_history[-1]
@@ -455,12 +519,13 @@ class VADServicer(vad_service_pb2_grpc.VADServiceServicer):
             # ego_fut_predsを取得 (shape: [3, 6, 2])
             ego_fut_preds = output[0]['pts_bbox']['ego_fut_preds']
 
-            predcicted_objects = []
+            ego_fut_cmd = ego_fut_cmd_tensor.data.cpu()[0, 0, 0]
+            ego_fut_cmd_idx = torch.nonzero(ego_fut_cmd)[0, 0]
+            ego_fut_pred = ego_fut_preds[ego_fut_cmd_idx]
+            ego_fut_pred = ego_fut_pred.cumsum(dim=-2)
 
-            confidences = np.linspace(1.0, 0.5, ego_fut_preds.shape[1])  # 6つの予測に対する信頼度を設定
-            predicted_object = self.create_predicted_object_with_trajectories(
-                trajectories=ego_fut_preds.permute(1, 0, 2),  # (6, 3, 2)の形状に変換
-                confidences=confidences,
+            predicted_object = self.create_predicted_object_from_single_trajectory(
+                trajectory=ego_fut_pred,  # shape: [6, 2]
                 current_pos=current_pos,
                 timestamp_sec=timestamp_sec,
                 timestamp_nanosec=timestamp_nanosec,
