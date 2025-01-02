@@ -45,7 +45,9 @@ import json
 class VehicleParams:
    def __init__(self, vehicle_info_path: str = None):
        self.vehicle_info_path = vehicle_info_path
-       self.params = self._load_vehicle_params()
+       params = self._load_vehicle_params()
+       self.vehicle_params =  params['vehicle_params']
+       self.camera_order = params["camera_order"]
 
    def _load_vehicle_params(self) -> Dict[str, Any]:
        """車両パラメータをYAMLファイルから読み込む"""
@@ -55,22 +57,24 @@ class VehicleParams:
        
        with open(yaml_path, 'r') as f:
            params = yaml.safe_load(f)
-       return params['vehicle_params']
+       return params
 
    @property
    def wheel_base(self) -> float:
-       return self.params['wheel_base']
+       return self.vehicle_params['wheel_base']
 
    @property
    def vehicle_length(self) -> float:
-       return self.params['vehicle_length']
+       return self.vehicle_params['vehicle_length']
 
    @property
    def vehicle_width(self) -> float:
-       return self.params['vehicle_width']
+       return self.vehicle_params['vehicle_width']
 
    @property
    def max_steer_angle(self) -> float:
+       return self.vehicle_params['max_steer_angle']
+
 def ns2aw_xy(ns_x, ns_y):
     aw_x = -ns_y
     aw_y = ns_x
@@ -335,6 +339,7 @@ class VADServicer(vad_service_pb2_grpc.VADServiceServicer):
             timestamp_sec = request.images[0].time_step_sec
             timestamp_nanosec = request.images[0].time_step_nanosec
 
+            camera_order = self.vehicle_params.camera_order
             camera_images = {}
             for camera_image in request.images:
                 # 画像データをデコード
@@ -342,7 +347,15 @@ class VADServicer(vad_service_pb2_grpc.VADServiceServicer):
                 image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
                 camera_images[camera_image.camera_id] = image
 
-            resized_images = [cv2.resize(img, (1280, 736), interpolation=cv2.INTER_LINEAR) for img in camera_images.values()]
+            # camera_orderのkeyの順に画像を並び替え
+            ordered_images = []
+            for camera_name in camera_order.keys():
+                camera_id = camera_order[camera_name]
+                if camera_id not in camera_images:
+                    raise ValueError(f"Camera {camera_name} (ID: {camera_id}) not found in input images")
+                ordered_images.append(camera_images[camera_id])
+
+            resized_images = [cv2.resize(img, (1280, 736), interpolation=cv2.INTER_LINEAR) for img in ordered_images]
             
             print("Processing images")
             img_tensor = torch.stack([
