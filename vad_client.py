@@ -346,7 +346,7 @@ class VADClient(Node):
         self.latest_steering = msg.steering_tire_angle  # 直接角度を保存
     
     def _compute_driving_command(self, path_msg: PathWithLaneId, num_points: int = 20) -> List[float]:
-        # TODO(Shin-kyoto): 進行方向がyとみなして良いのかを確認すべし
+        # autowareにおいては，進行方向がx. 左向きにy軸を取る．よって，delta_yが負なら右折．delta_yが正なら左折．
         # TODO(Shin-kyoto): 最初のN点をとって判定してよいのかを確認すべし
         """パスの形状から運転コマンド（右折/左折/直進）を計算
         
@@ -364,15 +364,12 @@ class VADClient(Node):
             return [0, 0, 1]  # 点が少なすぎる場合は直進とみなす
             
         # 最初の点の位置と向きを基準にする
-        start_x = path_msg.points[0].point.pose.position.x
         start_y = path_msg.points[0].point.pose.position.y
         
         # 最後の点（num_points番目）との相対位置を計算
-        end_x = path_msg.points[num_points-1].point.pose.position.x
         end_y = path_msg.points[num_points-1].point.pose.position.y
         
         # 相対位置を計算
-        delta_x = end_x - start_x
         delta_y = end_y - start_y
         
         # 進行方向の判定
@@ -380,11 +377,11 @@ class VADClient(Node):
         # 閾値は調整が必要
         TURN_THRESHOLD = 2.0  # メートル
         
-        if abs(delta_x) > TURN_THRESHOLD:
-            if delta_x > 0:
-                return [1, 0, 0]  # 右折
-            else:
+        if abs(delta_y) > TURN_THRESHOLD:
+            if delta_y > 0:
                 return [0, 1, 0]  # 左折
+            else:
+                return [1, 0, 0]  # 右折
         else:
             return [0, 0, 1]  # 直進
 
