@@ -77,13 +77,13 @@ class VehicleParams:
        return self.vehicle_params['max_steer_angle']
 
 def aw2ns_xy(aw_x, aw_y):
-    ns_x = aw_y
-    ns_y = -aw_x
+    ns_x = -aw_y
+    ns_y = aw_x
     return ns_x, ns_y
 
 def ns2aw_xy(ns_x, ns_y):
-    aw_x = -ns_y
-    aw_y = ns_x
+    aw_x = ns_y
+    aw_y = -ns_x
 
     return aw_x, aw_y
 
