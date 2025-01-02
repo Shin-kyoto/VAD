@@ -348,6 +348,7 @@ class VADClient(Node):
     def _compute_driving_command(self, path_msg: PathWithLaneId, num_points: int = 20) -> List[float]:
         # autowareにおいては，進行方向がx. 左向きにy軸を取る．よって，delta_yが負なら右折．delta_yが正なら左折．
         # TODO(Shin-kyoto): 最初のN点をとって判定してよいのかを確認すべし
+        # TODO(Shin-kyoto): path_msgの中に入っている情報はbase_link座標系と考えて良いのか？
         """パスの形状から運転コマンド（右折/左折/直進）を計算
         
         Args:
