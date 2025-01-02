@@ -6,6 +6,7 @@ import vad_service_pb2_grpc
 import cv2
 import torch
 import numpy as np
+from scipy.spatial.transform import Rotation as R
 import yaml
 from pathlib import Path
 import uuid
@@ -75,11 +76,59 @@ class VehicleParams:
    def max_steer_angle(self) -> float:
        return self.vehicle_params['max_steer_angle']
 
+def aw2ns_xy(aw_x, aw_y):
+    ns_x = aw_y
+    ns_y = -aw_x
+    return ns_x, ns_y
+
 def ns2aw_xy(ns_x, ns_y):
     aw_x = -ns_y
     aw_y = ns_x
 
     return aw_x, aw_y
+
+def get_nsego2global(awego2global_translation, awego2global_rotation):
+    """
+    autowareのego座標系からglobal座標系への変換を、
+    nuscenesのego座標系からglobal座標系への変換に変換する
+
+    Args:
+        awego2global_translation: autowareのego座標系からglobal座標系への並進 (Vector3)
+        awego2global_rotation: autowareのego座標系からglobal座標系への回転 (Vector3)
+
+    Returns:
+        nsego2global_translation: nuscenesのego座標系からglobal座標系への並進
+        nsego2global_rotation: nuscenesのego座標系からglobal座標系への回転（オイラー角 [roll, pitch, yaw]）
+    """
+    # Vector3からnumpy arrayに変換
+    translation = np.array([
+        float(awego2global_translation.x),
+        float(awego2global_translation.y),
+        float(awego2global_translation.z)
+    ])
+    
+    rotation = np.array([
+        float(awego2global_rotation.x),
+        float(awego2global_rotation.y),
+        float(awego2global_rotation.z)
+    ])
+
+    # 1. nuscenes ego → autoware ego の回転（z軸周り90度）をquaternionで表現
+    ns2aw_rot = R.from_euler('z', 90, degrees=True)
+
+    # 2. autoware ego → autoware global の回転をquaternionに変換
+    aw2global_rot = R.from_euler('xyz', rotation)
+
+    # 3. 回転の合成: ns_ego → aw_global = (aw_ego → aw_global) ∘ (ns_ego → aw_ego)
+    final_rot = aw2global_rot * ns2aw_rot
+
+    # 4. 並進はそのまま使用（すでにglobal座標系なので）
+    final_trans = translation
+
+    # 5. 四元数からオイラー角に変換（xyz順）
+    final_euler = final_rot.as_euler('xyz')
+
+    return final_trans, final_euler
 
 class VADWrapper:
     def __init__(self, vad_config_path = "/workspace/VAD/projects/configs/VAD/VAD_base_e2e.py", checkpoint_path = "/workspace/VAD/ckpts/VAD_base.pth"):
@@ -367,14 +416,16 @@ class VADServicer(vad_service_pb2_grpc.VADServiceServicer):
 
             # Odometryから速度と角速度を取得
             latest_odom = request.ego_history[-1]
-            ego_vx = latest_odom.twist.twist.linear.x
-            ego_vy = latest_odom.twist.twist.linear.y
+            aw_vx = latest_odom.twist.twist.linear.x
+            aw_vy = latest_odom.twist.twist.linear.y
+            ego_vx, ego_vy = aw2ns_xy(aw_vx, aw_vy)
             ego_w = latest_odom.twist.twist.angular.z
 
             # IMUから加速度を取得
             if hasattr(request, 'imu_data') and request.imu_data:
-                ax = request.imu_data.linear_acceleration.x
-                ay = request.imu_data.linear_acceleration.y
+                aw_ax = request.imu_data.linear_acceleration.x
+                aw_ay = request.imu_data.linear_acceleration.y
+                ax, ay = aw2ns_xy(aw_ax, aw_ay)
             else:
                 # IMUデータがない場合はダミー値
                 ax, ay = 0.0, 0.0
@@ -411,16 +462,21 @@ class VADServicer(vad_service_pb2_grpc.VADServiceServicer):
             # can_busの配列を作成（18要素）
             can_bus = np.zeros(18, dtype=np.float32)
 
+
+            # 座標変換
+            nsego2global_translation, nsego2global_rotation = get_nsego2global(
+                request.can_bus.ego2global_translation,
+                request.can_bus.ego2global_rotation
+            )
+
             # ego2global_translation
-            can_bus[0] = request.can_bus.ego2global_translation.x
-            can_bus[1] = request.can_bus.ego2global_translation.y
-            can_bus[2] = request.can_bus.ego2global_translation.z
+            can_bus[0:3] = nsego2global_translation
 
             # ego2global_rotation
             can_bus[3:7] = [
-                request.can_bus.ego2global_rotation.x,
-                request.can_bus.ego2global_rotation.y,
-                request.can_bus.ego2global_rotation.z,
+                nsego2global_rotation[0],  # roll
+                nsego2global_rotation[1],  # pitch
+                nsego2global_rotation[2],  # yaw
                 0.0
             ]
 
@@ -435,8 +491,8 @@ class VADServicer(vad_service_pb2_grpc.VADServiceServicer):
             can_bus[13] = ego_vx
             can_bus[14] = ego_vy
 
-            # patch_angle
-            patch_angle = request.can_bus.patch_angle
+            # patch_angle（座標系の変換を考慮して90度加算）
+            patch_angle = request.can_bus.patch_angle + 90.0
             can_bus[-2] = patch_angle / 180 * np.pi
             can_bus[-1] = patch_angle
 
@@ -498,18 +554,16 @@ class VADServicer(vad_service_pb2_grpc.VADServiceServicer):
             latest_odom = request.ego_history[-1]
             
             # 現在の位置
-            current_pos = [
-                latest_odom.pose.pose.position.x, 
-                latest_odom.pose.pose.position.y
-            ]
+            aw_current_x = latest_odom.pose.pose.position.x
+            aw_current_y = latest_odom.pose.pose.position.y
+            current_pos = list(aw2ns_xy(aw_current_x, aw_current_y))
             
             # 過去の位置（past_posesが存在する場合）
             past_pos = current_pos  # デフォルトは現在の位置
             if latest_odom.past_poses:
-                past_pos = [
-                    latest_odom.past_poses[0].x, 
-                    latest_odom.past_poses[0].y
-                ]
+                aw_past_x = latest_odom.past_poses[0].x
+                aw_past_y = latest_odom.past_poses[0].y
+                past_pos = list(aw2ns_xy(aw_past_x, aw_past_y))
             
             # テンソルに変換
             ego_his_trajs_tensor = torch.tensor([[[past_pos, current_pos]]]).float().to(self.device)
