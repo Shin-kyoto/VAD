@@ -325,62 +325,6 @@ class VADServicer(vad_service_pb2_grpc.VADServiceServicer):
         
         return obj
 
-    def create_predicted_object_with_trajectories(self, trajectories: torch.Tensor, ego_fut_cmd_idx: int, current_pos: list, timestamp_sec: int, timestamp_nanosec: int):
-        """複数の軌道を1つのPredictedObjectにまとめる"""
-        obj = vad_service_pb2.PredictedObject(
-            uuid=str(uuid.uuid4()),
-            existence_probability=0.9
-        )
-        
-        # 現在位置を初期位置として設定
-        kinematics = obj.kinematics
-        kinematics.initial_pose_with_covariance.pose.position.x = float(current_pos[0])
-        kinematics.initial_pose_with_covariance.pose.position.y = float(current_pos[1])
-        kinematics.initial_pose_with_covariance.pose.position.z = 0.0
-        kinematics.initial_pose_with_covariance.pose.orientation.w = 1.0
-        kinematics.initial_pose_with_covariance.covariance.extend([0.0] * 36)
-        
-        # 0.6秒分のタイムステップを生成 (0.1秒間隔で6ステップ)
-        num_steps = 6
-        dt = 0.1  # 0.1秒間隔
-        
-        # 3つの異なる軌道を生成
-        for traj_idx in range(3):
-            path = kinematics.predicted_paths.add()
-            
-            # 基本の軌道を取得
-            base_trajectory = trajectories[traj_idx]
-            
-            # 0.6秒分の予測を生成
-            for t in range(num_steps):
-                pose = path.path.add()
-                
-                # 時間ステップに基づいて位置を計算
-                t_norm = t / (num_steps - 1)  # 0から1の範囲に正規化
-                if t < len(base_trajectory):
-                    # 元の予測点を使用
-                    dx = float(base_trajectory[t][0])
-                    dy = float(base_trajectory[t][1])
-                else:
-                    # 最後の予測点までの軌道を線形補間
-                    last_idx = len(base_trajectory) - 1
-                    dx = float(base_trajectory[last_idx][0])
-                    dy = float(base_trajectory[last_idx][1])
-                
-                # 現在位置からの相対位置として設定
-                pose.position.x = dx + float(current_pos[0])
-                pose.position.y = dy + float(current_pos[1])
-                pose.position.z = 0.0
-                pose.orientation.w = 1.0
-            
-            # タイムスタンプと信頼度を設定
-            path.time_step.sec = timestamp_sec
-            path.time_step.nanosec = timestamp_nanosec
-            # ego_fut_cmdに対応するtrajectoryは信頼度1.0、それ以外は0.3
-            path.confidence = 1.0 if traj_idx == ego_fut_cmd_idx else 0.3
-        
-        return obj
-
 
     def ProcessData(self, request, context):
         try:
