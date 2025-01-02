@@ -71,7 +71,11 @@ class VehicleParams:
 
    @property
    def max_steer_angle(self) -> float:
-       return self.params['max_steer_angle']
+def ns2aw_xy(ns_x, ns_y):
+    aw_x = -ns_y
+    aw_y = ns_x
+
+    return aw_x, aw_y
 
 class VADWrapper:
     def __init__(self, vad_config_path = "/workspace/VAD/projects/configs/VAD/VAD_base_e2e.py", checkpoint_path = "/workspace/VAD/ckpts/VAD_base.pth"):
@@ -237,11 +241,13 @@ class VADServicer(vad_service_pb2_grpc.VADServiceServicer):
             uuid=str(uuid.uuid4()),
             existence_probability=0.9
         )
+
+        aw_x, aw_y = ns2aw_xy(float(current_pos[0]), float(current_pos[1]))
         
         # 現在位置を初期位置として設定
         kinematics = obj.kinematics
-        kinematics.initial_pose_with_covariance.pose.position.x = float(current_pos[0])
-        kinematics.initial_pose_with_covariance.pose.position.y = float(current_pos[1])
+        kinematics.initial_pose_with_covariance.pose.position.x = aw_x
+        kinematics.initial_pose_with_covariance.pose.position.y = aw_y
         kinematics.initial_pose_with_covariance.pose.position.z = 0.0
         kinematics.initial_pose_with_covariance.pose.orientation.w = 1.0
         kinematics.initial_pose_with_covariance.covariance.extend([0.0] * 36)
@@ -253,8 +259,9 @@ class VADServicer(vad_service_pb2_grpc.VADServiceServicer):
         for waypoint in trajectory:
             pose = path.path.add()
             # 現在位置からの相対位置として設定
-            pose.position.x = float(waypoint[0]) + float(current_pos[0])
-            pose.position.y = float(waypoint[1]) + float(current_pos[1])
+            aw_dx, aw_dy = ns2aw_xy(float(waypoint[0]), float(waypoint[1]))
+            pose.position.x = aw_dx + aw_x
+            pose.position.y = aw_dy + aw_y
             pose.position.z = 0.0
             pose.orientation.w = 1.0
         
