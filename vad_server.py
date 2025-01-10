@@ -507,7 +507,8 @@ class VADServicer(vad_service_pb2_grpc.VADServiceServicer):
             if latest_odom.past_poses:
                 aw_past_x = latest_odom.past_poses[0].x
                 aw_past_y = latest_odom.past_poses[0].y
-                past_pos = list(aw2ns_xy(aw_past_x, aw_past_y))
+                ns_past_x, ns_past_y = aw2ns_xy(aw_past_x, aw_past_y)
+                past_pos = [ns_past_x - current_pos[0], ns_past_y - current_pos[1]]
             
             # テンソルに変換
             ego_his_trajs_tensor = torch.tensor([[[past_pos, current_pos]]]).float().to(self.device)
