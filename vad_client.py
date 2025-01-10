@@ -574,8 +574,8 @@ class VADClient(Node):
                     predicted_path.path.append(pose_map)
                 
                 # Time step
-                predicted_path.time_step.sec = proto_path.time_step.sec
-                predicted_path.time_step.nanosec = proto_path.time_step.nanosec
+                predicted_path.time_step.sec = 1
+                predicted_path.time_step.nanosec = 0
                 predicted_path.confidence = proto_path.confidence
                 
                 obj.kinematics.predicted_paths.append(predicted_path)
