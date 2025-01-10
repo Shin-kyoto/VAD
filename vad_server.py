@@ -511,7 +511,7 @@ class VADServicer(vad_service_pb2_grpc.VADServiceServicer):
                 past_pos = [ns_past_x - current_pos[0], ns_past_y - current_pos[1]]
             
             # テンソルに変換
-            ego_his_trajs_tensor = torch.tensor([[[past_pos, current_pos]]]).float().to(self.device)
+            ego_his_trajs_tensor = torch.tensor([[[past_pos, [0,0]]]]).float().to(self.device)
             ego_his_trajs = DataContainer(ego_his_trajs_tensor, stack=True, padding_value=0)
 
             # モデル入力の準備
