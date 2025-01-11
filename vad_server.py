@@ -535,7 +535,7 @@ class VADServicer(vad_service_pb2_grpc.VADServiceServicer):
             ego_fut_cmd = ego_fut_cmd_tensor.data.cpu()[0, 0, 0]
             ego_fut_cmd_idx = torch.nonzero(ego_fut_cmd)[0, 0]
             ego_fut_pred = ego_fut_preds[ego_fut_cmd_idx]
-            ego_fut_pred = ego_fut_pred.cumsum(dim=-2)
+            # ego_fut_pred = ego_fut_pred.cumsum(dim=-2)
 
             predicted_object = self.create_predicted_object_from_single_trajectory(
                 trajectory=ego_fut_pred,  # shape: [6, 2]
