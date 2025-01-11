@@ -26,6 +26,7 @@ from autoware_vehicle_msgs.msg import SteeringReport
 from tf2_msgs.msg import TFMessage
 from geometry_msgs.msg import (
     PoseWithCovariance,
+    PoseStamped,
     TransformStamped,
     TwistWithCovariance,
     Point,
@@ -34,6 +35,7 @@ from geometry_msgs.msg import (
     Pose
 )
 import uuid
+from rclpy.duration import Duration
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy
 from std_msgs.msg import Header
 import time
@@ -591,13 +593,41 @@ class VADClient(Node):
             import traceback
             self.get_logger().error(traceback.format_exc())
 
-    def do_transform_pose(self, pose_base_link, transform):
+    def do_transform_pose(self, pose_base_link, time_sec, time_nanosec, target_frame: str):
         """
         tf2の変換を使用してPoseを変換
+        
+        Args:
+            pose_base_link: 変換元のPoseWithCovariance (base_linkフレーム)
+            time_sec: タイムスタンプの秒部分
+            time_nanosec: タイムスタンプのナノ秒部分
+            target_frame: 変換先のフレーム名（例：'map'）
+            
+        Returns:
+            変換後のPoseWithCovariance
         """
-        # transformed_pose = tf2_geometry_msgs.do_transform_pose(pose_base_link, transform)
-        transformed_pose = pose_base_link
-        return transformed_pose
+        # PoseStampedメッセージの作成
+        pose_stamped = PoseStamped()
+        pose_stamped.header.frame_id = 'base_link'  # 変換元のフレーム
+        pose_stamped.header.stamp.sec = time_sec
+        pose_stamped.header.stamp.nanosec = time_nanosec
+
+        try:
+            # 変換のタイムアウトを1秒に設定
+            transform = self.tf_buffer.lookup_transform(
+                target_frame,
+                'base_link',
+                pose_stamped.header.stamp,
+                Duration(seconds=1.0)
+            )
+            
+            # tf2_geometry_msgsを使用してポーズを変換
+            return tf2_geometry_msgs.do_transform_pose(pose_base_link,transform)
+            
+        except (tf2_ros.LookupException, tf2_ros.ConnectivityException, 
+                tf2_ros.ExtrapolationException) as e:
+            self.get_logger().error(f'Failed to transform pose: {e}')
+            raise
         
     def publish_trajectory(self, response: vad_service_pb2.VADResponse):
         msg = PredictedObjects()
@@ -650,12 +680,16 @@ class VADClient(Node):
                 kinematics.initial_pose_with_covariance
             )
             # 初期位置を座標変換
-            initial_pose_map = self.do_transform_pose(initial_pose, transform=None)
-            obj.kinematics.initial_pose_with_covariance = initial_pose_map
+            initial_time_sec = kinematics.predicted_paths[0].time_step.sec
+            initial_time_nanosec = kinematics.predicted_paths[0].time_step.nanosec
+            initial_pose.pose = self.do_transform_pose(initial_pose.pose, initial_time_sec, initial_time_nanosec, target_frame="map")
+            obj.kinematics.initial_pose_with_covariance = initial_pose
             
             # Predicted paths
             for proto_path in kinematics.predicted_paths:
                 predicted_path = PredictedPath()
+                time_sec = proto_path.time_step.sec
+                time_nanosec = proto_path.time_step.nanosec
                 # Convert poses
                 for proto_pose in proto_path.path:
                     pose = Pose()
@@ -667,7 +701,7 @@ class VADClient(Node):
                     pose.orientation.z = proto_pose.orientation.z
                     pose.orientation.w = proto_pose.orientation.w
                     # 座標変換
-                    pose_map = self.do_transform_pose(pose, transform=None)
+                    pose_map = self.do_transform_pose(pose, time_sec, time_nanosec, target_frame="map")
                     predicted_path.path.append(pose_map)
                 
                 # Time step

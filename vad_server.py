@@ -289,18 +289,19 @@ class VADServicer(vad_service_pb2_grpc.VADServiceServicer):
             current_pos: 現在位置 [x, y]
             timestamp_sec: タイムスタンプ（秒）
             timestamp_nanosec: タイムスタンプ（ナノ秒）
+
+        Return:
+            PredictedObject: base_link座標系のPredictedObject
         """
         obj = vad_service_pb2.PredictedObject(
             uuid=str(uuid.uuid4()),
             existence_probability=0.9
         )
-
-        aw_x, aw_y = ns2aw_xy(float(current_pos[0]), float(current_pos[1]))
         
         # 現在位置を初期位置として設定
         kinematics = obj.kinematics
-        kinematics.initial_pose_with_covariance.pose.position.x = aw_x
-        kinematics.initial_pose_with_covariance.pose.position.y = aw_y
+        kinematics.initial_pose_with_covariance.pose.position.x = 0.0 # TODO: base_link座標系の原点を初期位置として格納しているが，これでいいのか？
+        kinematics.initial_pose_with_covariance.pose.position.y = 0.0
         kinematics.initial_pose_with_covariance.pose.position.z = 0.0
         kinematics.initial_pose_with_covariance.pose.orientation.w = 1.0
         kinematics.initial_pose_with_covariance.covariance.extend([0.0] * 36)
@@ -313,8 +314,8 @@ class VADServicer(vad_service_pb2_grpc.VADServiceServicer):
             pose = path.path.add()
             # 現在位置からの相対位置として設定
             aw_dx, aw_dy = ns2aw_xy(float(waypoint[0]), float(waypoint[1]))
-            pose.position.x = aw_dx + aw_x
-            pose.position.y = aw_dy + aw_y
+            pose.position.x = aw_dx
+            pose.position.y = aw_dy
             pose.position.z = 0.0
             pose.orientation.w = 1.0
         
