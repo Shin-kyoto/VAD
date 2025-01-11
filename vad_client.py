@@ -10,9 +10,9 @@ from typing import List
 
 import rclpy
 from rclpy.node import Node
-# import tf2_ros
-# import tf2_geometry_msgs
-from sensor_msgs.msg import CompressedImage, Imu
+import tf2_ros
+import tf2_geometry_msgs
+from sensor_msgs.msg import CompressedImage, Imu, CameraInfo
 from nav_msgs.msg import Odometry 
 from autoware_perception_msgs.msg import (
     PredictedObjects,
@@ -38,6 +38,49 @@ from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy
 from std_msgs.msg import Header
 import time
 
+def create_transform_matrix(transform_msg: TransformStamped) -> np.ndarray:
+    """TransformStampedメッセージから4x4同次変換行列を作成する
+    
+    Args:
+        transform_msg: ROS2のTransformStampedメッセージ
+        
+    Returns:
+        4x4の同次変換行列（NumPy配列）
+    """
+    # クォータニオンから回転行列を作成
+    quat = [
+        transform_msg.transform.rotation.x,
+        transform_msg.transform.rotation.y,
+        transform_msg.transform.rotation.z,
+        transform_msg.transform.rotation.w
+    ]
+    R = Rotation.from_quat(quat).as_matrix()
+    
+    # 並進ベクトルを取得
+    t = np.array([
+        transform_msg.transform.translation.x,
+        transform_msg.transform.translation.y,
+        transform_msg.transform.translation.z
+    ])
+    
+    # 4x4同次変換行列を作成
+    T = np.eye(4)
+    T[:3, :3] = R
+    T[:3, 3] = t
+    
+    return T
+
+def get_lidar2img(projection_matrix: np.ndarray, sensor_kit_base_link2camera_msg: TransformStamped):
+    sensor_kit_base_link2camera: np.ndarray = create_transform_matrix(sensor_kit_base_link2camera_msg)
+    viewpad = np.eye(4)
+    viewpad[:projection_matrix.shape[0], :projection_matrix.shape[1]] = projection_matrix
+    ns_lidar2sensor_kit_base_link = np.array([[ 0,  1,  0,  0,],
+                                              [-1,  0,  0,  0,],
+                                              [ 0,  0,  1,  0,],
+                                              [ 0,  0,  0,  1,],])
+    ns_lidar2cam = sensor_kit_base_link2camera @ ns_lidar2sensor_kit_base_link
+    return viewpad @ ns_lidar2cam.T
+
 class VADClient(Node):
     def __init__(self, dummy_mode=False):
         super().__init__('vad_client')
@@ -62,6 +105,16 @@ class VADClient(Node):
             f'/sensing/camera/camera{i}/image_rect_color/compressed' 
             for i in range(6)
         ]
+        self.camera_info_topics = [
+            f'/sensing/camera/camera{i}/camera_info'
+            for i in range(6)
+        ]
+        # カメラ情報の保存用ディクショナリ
+        self.latest_camera_info: Dict[str, CameraInfo] = {
+            topic: None for topic in self.camera_info_topics
+        }
+        # センサーキットからカメラへのTF保存用ディクショナリ
+        self.camera_transforms: Dict[str, TransformStamped] = {}
         self.reset_topic = '/sensing/camera/camera0/image_rect_color/compressed'
 
         self.tf_subscription = self.create_subscription(
@@ -83,6 +136,15 @@ class VADClient(Node):
                 lambda msg, topic=topic: self.image_callback(msg, topic),
                 image_qos_profile
             )
+        # camera_infoのサブスクライバー
+        for topic in self.camera_info_topics:
+            self.create_subscription(
+                CameraInfo,
+                topic,
+                lambda msg, topic=topic: self.camera_info_callback(msg, topic),
+                image_qos_profile
+            )
+
         self.create_subscription(
             Odometry,
             '/localization/kinematic_state',
@@ -167,8 +229,8 @@ class VADClient(Node):
         self.driving_command = [0, 0, 1]  # Go straight by default
 
         # tf2バッファとリスナーの初期化
-        # self.tf_buffer = tf2_ros.Buffer()
-        # self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
+        self.tf_buffer = tf2_ros.Buffer()
+        self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
         
         self.get_logger().info('Initialized VADClient')
         if self.dummy_mode:
@@ -246,7 +308,30 @@ class VADClient(Node):
 
         self.latest_images[topic] = msg
         self.try_process()
+
+    def camera_info_callback(self, msg: CameraInfo, topic: str):
+        """カメラキャリブレーション情報のコールバック"""
+        self.get_logger().debug(f'Received camera info from {topic}')
+        self.latest_camera_info[topic] = msg
         
+        # camera_optical_linkのフレーム名を取得
+        camera_name: str = topic.split('/')[-2]
+        camera_frame = f'{camera_name}/camera_optical_link'
+        
+        try:
+            # sensor_kit_base_linkからカメラへのTFを取得
+            transform = self.tf_buffer.lookup_transform(
+                'sensor_kit_base_link',
+                camera_frame,
+                self.get_clock().now(),
+                rclpy.duration.Duration(seconds=1.0)
+            )
+            self.camera_transforms[camera_name] = transform
+            self.get_logger().debug(f'Updated transform for {camera_frame}')
+        except (tf2_ros.LookupException, tf2_ros.ConnectivityException,
+                tf2_ros.ExtrapolationException) as e:
+            self.get_logger().warning(f'Failed to lookup transform for {camera_frame}: {e}')
+
     def ego_callback(self, msg: Odometry, num_past_ego_pose: int = 2):
         self.get_logger().debug('Received odometry')
         current_point = vad_service_pb2.Point(
@@ -442,7 +527,9 @@ class VADClient(Node):
         camera_images = []
         for camera_id in range(6):
             topic = f'/sensing/camera/camera{camera_id}/image_rect_color/compressed'
+            info_topic = f'/sensing/camera/camera{camera_id}/camera_info'
             image_topic = self.latest_images[topic]
+            camera_info = self.latest_camera_info[info_topic]
             
             # bytes型に変換
             if isinstance(image_topic.data, array.array):
@@ -454,9 +541,18 @@ class VADClient(Node):
                 camera_id=camera_id,
                 time_step_sec=image_topic.header.stamp.sec,
                 time_step_nanosec=image_topic.header.stamp.nanosec
+                # カメラキャリブレーション情報を追加
             )
             camera_images.append(camera_image)
 
+        # lidar2img
+        lidar2imgs = {}
+        for camera_id in range(6):
+            info_topic = f'/sensing/camera/camera{camera_id}/camera_info'
+            camera_info = self.latest_camera_info[info_topic]
+            projection_matrix = np.delete(camera_info.p.reshape(3, 4), 3, 1)
+            sensor_kit_base_link2camera_msg: TransformStamped = self.camera_transforms[f"camera{camera_id}"]
+            lidar2imgs[camera_id] = get_lidar2img(projection_matrix=projection_matrix, sensor_kit_base_link2camera_msg=sensor_kit_base_link2camera_msg).T
         steering_report = vad_service_pb2.SteeringReport(
             steering_tire_angle=self.latest_steering if self.latest_steering is not None else 0.0
         )
@@ -480,6 +576,7 @@ class VADClient(Node):
             driving_command=self.driving_command,
             steering=steering_report,
             can_bus=can_bus_msg,
+            # lidar2img=lidar2imgs,
         )
         try:
             self.get_logger().info('Sending request to VAD server')
