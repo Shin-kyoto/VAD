@@ -3,6 +3,7 @@ test/
 ckpts/
 *venv
 private
+work_dirs
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
