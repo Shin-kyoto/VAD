@@ -432,7 +432,7 @@ log_config = dict(
     interval=100,
     hooks=[
         dict(type='TextLoggerHook'),
-        dict(type='TensorboardLoggerHook')
+        # dict(type='TensorboardLoggerHook')
     ])
 # fp16 = dict(loss_scale=512.)
 # find_unused_parameters = True
