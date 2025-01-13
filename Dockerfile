@@ -56,7 +56,7 @@ RUN python3 -m pip install --no-cache-dir --upgrade pip setuptools wheel && \
     trimesh==2.35.39 \
     prettytable==3.7.0 \
     terminaltables==3.1.10 \
-    yapf==0.43.0 \
+    yapf==0.40.1 \
     addict==2.4.0 \
     similaritymeasures==1.2.0
 
