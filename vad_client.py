@@ -704,9 +704,9 @@ class VADClient(Node):
                     pose_map = self.do_transform_pose(pose, time_sec, time_nanosec, target_frame="map")
                     predicted_path.path.append(pose_map)
                 
-                # Time step
-                predicted_path.time_step.sec = 1
-                predicted_path.time_step.nanosec = 0
+                # Time step: 100ms
+                predicted_path.time_step.sec = 0
+                predicted_path.time_step.nanosec = 1
                 predicted_path.confidence = proto_path.confidence
                 
                 obj.kinematics.predicted_paths.append(predicted_path)
