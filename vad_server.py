@@ -533,6 +533,8 @@ class VADServicer(vad_service_pb2_grpc.VADServiceServicer):
             # ego_fut_predsを取得 (shape: [3, 6, 2])
             ego_fut_preds = output[0]['pts_bbox']['ego_fut_preds']
 
+            self.visualize_trajectory(resized_images, ego_fut_preds)
+
             ego_fut_cmd = ego_fut_cmd_tensor.data.cpu()[0, 0, 0]
             ego_fut_cmd_idx = torch.nonzero(ego_fut_cmd)[0, 0]
             ego_fut_pred = ego_fut_preds[ego_fut_cmd_idx]
@@ -560,6 +562,30 @@ class VADServicer(vad_service_pb2_grpc.VADServiceServicer):
             context.set_code(grpc.StatusCode.INTERNAL)
             context.set_details(str(e))
             raise
+    
+    def visualize_trajectory(self, resized_images, ego_fut_preds):
+        plan_traj = ego_fut_preds[2]
+
+        plan_traj[abs(plan_traj) < 0.01] = 0.0
+        plan_traj = plan_traj.cumsum(axis=0)
+
+        plan_traj = np.concatenate((
+            plan_traj[:, [0]],
+            plan_traj[:, [1]],
+            -1.0*np.ones((plan_traj.shape[0], 1)),
+            np.ones((plan_traj.shape[0], 1)),
+        ), axis=1)
+        # add the start point in lcf
+        plan_traj = np.concatenate((np.zeros((1, plan_traj.shape[1])), plan_traj), axis=0)
+        # plan_traj[0, :2] = 2*plan_traj[1, :2] - plan_traj[2, :2]
+        plan_traj[0, 0] = 0.3
+        plan_traj[0, 2] = -1.0
+        plan_traj[0, 3] = 1.0     
+
+        # lidar2img
+
+        # project plan_traj to img
+        
 
 def serve(vehicle_info_path: Path):
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
