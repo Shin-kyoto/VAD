@@ -17,6 +17,9 @@ from mmcv.parallel.data_container import DataContainer
 import sys
 sys.path.append('')
 import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.collections import LineCollection
+
 import argparse
 import mmcv
 import os
@@ -37,6 +40,7 @@ from mmdet3d.models import build_model
 from mmdet.apis import set_random_seed
 # from projects.mmdet3d_plugin.bevformer.apis.test import custom_multi_gpu_test
 from projects.mmdet3d_plugin.VAD.apis.test import custom_multi_gpu_test
+from projects.mmdet3d_plugin.core.bbox.structures.nuscenes_box import color_map
 from mmdet.datasets import replace_ImageToTensor
 import time
 import os.path as osp
@@ -533,7 +537,7 @@ class VADServicer(vad_service_pb2_grpc.VADServiceServicer):
             # ego_fut_predsを取得 (shape: [3, 6, 2])
             ego_fut_preds = output[0]['pts_bbox']['ego_fut_preds']
 
-            self.visualize_trajectory(resized_images, ego_fut_preds)
+            self.visualize_trajectory(resized_images, ego_fut_preds, lidar2img_stacked)
 
             ego_fut_cmd = ego_fut_cmd_tensor.data.cpu()[0, 0, 0]
             ego_fut_cmd_idx = torch.nonzero(ego_fut_cmd)[0, 0]
@@ -562,8 +566,8 @@ class VADServicer(vad_service_pb2_grpc.VADServiceServicer):
             context.set_code(grpc.StatusCode.INTERNAL)
             context.set_details(str(e))
             raise
-    
-    def visualize_trajectory(self, resized_images, ego_fut_preds):
+
+    def _get_visualized_plan_vecs(self, ego_fut_preds, lidar2img_front):
         plan_traj = ego_fut_preds[2]
 
         plan_traj[abs(plan_traj) < 0.01] = 0.0
@@ -583,8 +587,96 @@ class VADServicer(vad_service_pb2_grpc.VADServiceServicer):
         plan_traj[0, 3] = 1.0     
 
         # lidar2img
+        plan_traj = lidar2img_front @ plan_traj.T
+        plan_traj = plan_traj[0:2, ...] / np.maximum(
+            plan_traj[2:3, ...], np.ones_like(plan_traj[2:3, ...]) * 1e-5)
+        plan_traj = plan_traj.T
+        plan_traj = np.stack((plan_traj[:-1], plan_traj[1:]), axis=1)
 
-        # project plan_traj to img
+        plan_vecs = None
+        for i in range(plan_traj.shape[0]):
+            plan_vec_i = plan_traj[i]
+            x_linspace = np.linspace(plan_vec_i[0, 0], plan_vec_i[1, 0], 51)
+            y_linspace = np.linspace(plan_vec_i[0, 1], plan_vec_i[1, 1], 51)
+            xy = np.stack((x_linspace, y_linspace), axis=1)
+            xy = np.stack((xy[:-1], xy[1:]), axis=1)
+            if plan_vecs is None:
+                plan_vecs = xy
+            else:
+                plan_vecs = np.concatenate((plan_vecs, xy), axis=0)
+
+        return plan_vecs
+
+    def visualize_trajectory(self, resized_images, ego_fut_preds, lidar2img_stacked):
+        lidar2img_front = lidar2img_stacked[0]
+        plan_vecs = self._get_visualized_plan_vecs(ego_fut_preds, lidar2img_front)
+
+        # 入力画像の順序
+        input_cam_order = ['CAM_FRONT', 'CAM_FRONT_RIGHT', 'CAM_FRONT_LEFT', 
+                        'CAM_BACK', 'CAM_BACK_LEFT', 'CAM_BACK_RIGHT']
+        
+        # 表示順序
+        display_cam_order = ['CAM_FRONT_LEFT', 'CAM_FRONT', 'CAM_FRONT_RIGHT',
+                            'CAM_BACK_LEFT', 'CAM_BACK', 'CAM_BACK_RIGHT']
+
+        cam_imgs = []
+
+        # 各表示位置について処理
+        for cam_name in display_cam_order:
+            # 入力データのインデックスを取得
+            input_idx = input_cam_order.index(cam_name)
+            
+            # 対応する画像とlidar2imgを取得
+            img = resized_images[input_idx]
+            
+            # OpenCV用に画像をBGRに変換（必要な場合）
+            if len(img.shape) == 3 and img.shape[2] == 3:
+                img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+            
+            # matplotlib使用して軌道を描画
+            fig, ax = plt.subplots(figsize=(8, 6))
+            ax.imshow(img)
+            
+            # CAM_FRONTの場合のみ軌道を描画
+            if cam_name == 'CAM_FRONT':
+                cmap = 'winter'
+                y = np.sin(np.linspace(1/2*np.pi, 3/2*np.pi, 301))
+                colors = color_map(y[:-1], cmap)
+                line_segments = LineCollection(plan_vecs, colors=colors, linewidths=2, 
+                                            linestyles='solid', cmap=cmap)
+                ax.add_collection(line_segments)
+
+            # 軸の設定
+            ax.set_xlim(0, img.shape[1])
+            ax.set_ylim(img.shape[0], 0)
+            ax.axis('off')
+
+            # 余白を最小化
+            plt.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
+            plt.margins(0,0)
+            
+            # カメラ名を表示
+            ax.set_title(cam_name)
+            
+            # figureをnumpy arrayに変換
+            fig.canvas.draw()
+            img_array = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
+            img_array = img_array.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+            img_array = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
+            
+            plt.close()
+            
+            cam_imgs.append(img_array)
+
+        # 画像を結合
+        cam_img_top = cv2.hconcat([cam_imgs[0], cam_imgs[1], cam_imgs[2]])
+        cam_img_down = cv2.hconcat([cam_imgs[3], cam_imgs[4], cam_imgs[5]])
+        cam_img = cv2.vconcat([cam_img_top, cam_img_down])
+        size = (2133, 800)
+        cam_img = cv2.resize(cam_img, size)
+        cv2.imwrite("tmp.png", cam_img)
+
+        # import pdb;pdb.set_trace()
         
 
 def serve(vehicle_info_path: Path):
